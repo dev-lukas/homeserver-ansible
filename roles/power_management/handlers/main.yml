@@ -1,0 +1,5 @@
+---
+# Handlers for power management role
+
+- name: Run powertop auto-tune
+  ansible.builtin.command: /usr/sbin/powertop --auto-tune

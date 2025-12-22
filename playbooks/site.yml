@@ -1,0 +1,5 @@
+---
+# Main playbook - runs all configurations
+
+- name: Configure all hosts
+  ansible.builtin.import_playbook: proxmox.yml

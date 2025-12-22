@@ -1,0 +1,21 @@
+---
+# Proxmox host configuration
+
+- name: Configure Proxmox hosts
+  hosts: proxmox
+  become: true
+
+  roles:
+    - role: proxmox_repos
+      tags:
+        - repos
+        - apt
+
+    - role: common
+      tags:
+        - common
+        - always
+
+    - role: power_management
+      tags:
+        - power

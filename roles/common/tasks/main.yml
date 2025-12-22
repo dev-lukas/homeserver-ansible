@@ -1,0 +1,8 @@
+---
+# Common tasks for all hosts
+
+- name: Include SSH configuration
+  ansible.builtin.include_tasks: ssh.yml
+  tags:
+    - ssh
+    - security

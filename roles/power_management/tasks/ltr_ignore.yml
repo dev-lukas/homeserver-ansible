@@ -1,0 +1,15 @@
+---
+# LTR ignore configuration for Intel power management
+
+- name: Configure LTR ignore cron job
+  ansible.builtin.cron:
+    name: "ltr ignore configuration"
+    special_time: reboot
+    job: "/bin/sh -c 'echo 2 > /sys/kernel/debug/pmc_core/ltr_ignore'"
+    user: root
+    state: present
+
+- name: Apply LTR ignore now
+  ansible.builtin.shell: echo 2 > /sys/kernel/debug/pmc_core/ltr_ignore
+  changed_when: false
+  failed_when: false  # May fail if file doesn't exist on some systems

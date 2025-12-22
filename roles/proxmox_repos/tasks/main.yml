@@ -1,0 +1,25 @@
+---
+# Proxmox repository configuration
+# Disables enterprise repos and enables no-subscription repos
+
+- name: Disable Proxmox enterprise repository
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/pve-enterprise.list
+    state: absent
+  notify: Update apt cache
+
+- name: Disable Proxmox Ceph enterprise repository
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/ceph.list
+    state: absent
+  notify: Update apt cache
+
+- name: Add Proxmox no-subscription repository
+  ansible.builtin.apt_repository:
+    repo: "deb http://download.proxmox.com/debian/pve {{ ansible_distribution_release }} pve-no-subscription"
+    filename: pve-no-subscription
+    state: present
+  notify: Update apt cache
+
+- name: Flush handlers to update apt cache
+  ansible.builtin.meta: flush_handlers

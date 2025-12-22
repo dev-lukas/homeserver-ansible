@@ -1,0 +1,15 @@
+---
+# Power management tasks
+
+- name: Include powertop configuration
+  ansible.builtin.include_tasks: powertop.yml
+  tags:
+    - powertop
+    - power
+
+- name: Include LTR ignore configuration
+  ansible.builtin.include_tasks: ltr_ignore.yml
+  when: ltr_ignore_enabled | default(false)
+  tags:
+    - ltr
+    - power

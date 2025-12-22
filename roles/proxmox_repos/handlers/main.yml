@@ -1,0 +1,6 @@
+---
+# Handlers for proxmox_repos role
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes

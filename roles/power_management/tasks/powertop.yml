@@ -1,0 +1,22 @@
+---
+# Powertop installation and configuration
+
+- name: Install powertop
+  ansible.builtin.apt:
+    name: powertop
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Configure powertop auto-tune cron job
+  ansible.builtin.cron:
+    name: "powertop auto-tune"
+    special_time: reboot
+    job: "/usr/sbin/powertop --auto-tune"
+    user: root
+    state: "{{ 'present' if powertop_auto_tune | default(true) else 'absent' }}"
+
+- name: Run powertop auto-tune now
+  ansible.builtin.command: /usr/sbin/powertop --auto-tune
+  changed_when: false
+  when: powertop_auto_tune | default(true)

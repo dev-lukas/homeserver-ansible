@@ -1,0 +1,17 @@
+---
+# SSH key configuration
+
+- name: Ensure .ssh directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/.ssh"
+    state: directory
+    mode: "0700"
+    owner: "{{ ansible_user }}"
+
+- name: Add authorized SSH keys
+  ansible.posix.authorized_key:
+    user: "{{ ansible_user }}"
+    key: "{{ item }}"
+    state: present
+  loop: "{{ ssh_authorized_keys }}"
+  when: ssh_authorized_keys is defined and ssh_authorized_keys | length > 0

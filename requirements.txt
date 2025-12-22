@@ -1,0 +1,11 @@
+# Ansible core and dependencies
+ansible>=8.0.0
+ansible-core>=2.15.0
+
+# Required for various modules
+jmespath>=1.0.0
+netaddr>=0.8.0
+
+# For linting and development
+ansible-lint>=6.0.0
+yamllint>=1.0.0
