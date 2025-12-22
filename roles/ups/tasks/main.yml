@@ -1,0 +1,87 @@
+---
+# NUT (Network UPS Tools) configuration for Eaton 3S 550 UPS
+
+- name: Install NUT packages
+  ansible.builtin.apt:
+    name:
+      - nut
+      - nut-client
+      - nut-server
+    state: present
+    update_cache: true
+
+- name: Create udev rule for Eaton UPS
+  ansible.builtin.copy:
+    dest: /etc/udev/rules.d/90-nut-ups.rules
+    content: |
+      # Eaton 3S 550 UPS - allow nut group access
+      SUBSYSTEM=="usb", ATTR{idVendor}=="0463", MODE="0660", GROUP="nut"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload udev rules
+
+- name: Configure NUT mode
+  ansible.builtin.copy:
+    dest: /etc/nut/nut.conf
+    content: |
+      MODE=standalone
+    owner: root
+    group: nut
+    mode: "0640"
+  notify: Restart NUT services
+
+- name: Configure UPS driver (ups.conf)
+  ansible.builtin.copy:
+    dest: /etc/nut/ups.conf
+    content: |
+      [eaton]
+        driver = usbhid-ups
+        port = auto
+        desc = "Eaton 3S 550"
+        vendorid = 0463
+        override.battery.charge.low = {{ ups_shutdown_battery_percent }}
+    owner: root
+    group: nut
+    mode: "0640"
+  notify: Restart NUT services
+
+- name: Configure upsd (upsd.conf)
+  ansible.builtin.copy:
+    dest: /etc/nut/upsd.conf
+    content: |
+      LISTEN 127.0.0.1 3493
+    owner: root
+    group: nut
+    mode: "0640"
+  notify: Restart NUT services
+
+- name: Configure upsd users (upsd.users)
+  ansible.builtin.copy:
+    dest: /etc/nut/upsd.users
+    content: |
+      [upsmon]
+        password = {{ ups_monitor_password | default('changeme') }}
+        upsmon master
+    owner: root
+    group: nut
+    mode: "0640"
+  notify: Restart NUT services
+
+- name: Configure upsmon (upsmon.conf)
+  ansible.builtin.template:
+    src: upsmon.conf.j2
+    dest: /etc/nut/upsmon.conf
+    owner: root
+    group: nut
+    mode: "0640"
+  notify: Restart NUT services
+
+- name: Ensure NUT services are enabled and running
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - nut-server
+    - nut-monitor

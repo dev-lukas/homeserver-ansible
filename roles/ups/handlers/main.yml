@@ -1,0 +1,13 @@
+---
+- name: Reload udev rules
+  ansible.builtin.shell: |
+    udevadm control --reload-rules
+    udevadm trigger --subsystem-match=usb
+
+- name: Restart NUT services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: restarted
+  loop:
+    - nut-server
+    - nut-monitor
