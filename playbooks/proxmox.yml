@@ -19,3 +19,8 @@
     - role: power_management
       tags:
         - power
+
+    - role: ups
+      tags:
+        - ups
+        - nut

@@ -1,0 +1,59 @@
+## upsmon.conf - UPS monitor configuration
+## Managed by Ansible
+
+# Monitor the UPS - syntax: MONITOR <system> <powervalue> <username> <password> <type>
+MONITOR eaton@localhost 1 upsmon {{ ups_monitor_password | default('changeme') }} master
+
+# Minimum battery percentage before initiating shutdown
+MINSUPPLIES 1
+
+# Shutdown command
+SHUTDOWNCMD "/sbin/shutdown -h +0"
+
+# Notification command (optional - can be customized)
+NOTIFYCMD /usr/sbin/upssched
+
+# Poll interval in seconds
+POLLFREQ 5
+
+# Poll interval when on battery
+POLLFREQALERT 5
+
+# Time to wait before declaring UPS dead
+HOSTSYNC 15
+
+# Seconds between shutdown warning and actual shutdown
+DEADTIME 15
+
+# Final delay before forced shutdown
+FINALDELAY 5
+
+# Power down flag file
+POWERDOWNFLAG /etc/killpower
+
+# Battery percentage threshold for low battery (triggers shutdown)
+# This sets the threshold at 25% as requested
+RBWARNTIME 43200
+
+# Notification flags
+NOTIFYMSG ONLINE    "UPS %s on line power"
+NOTIFYMSG ONBATT    "UPS %s on battery"
+NOTIFYMSG LOWBATT   "UPS %s battery is low"
+NOTIFYMSG FSD       "UPS %s: forced shutdown in progress"
+NOTIFYMSG COMMOK    "Communications with UPS %s established"
+NOTIFYMSG COMMBAD   "Communications with UPS %s lost"
+NOTIFYMSG SHUTDOWN  "Auto logout and shutdown proceeding"
+NOTIFYMSG REPLBATT  "UPS %s battery needs to be replaced"
+NOTIFYMSG NOCOMM    "UPS %s is unavailable"
+NOTIFYMSG NOPARENT  "upsmon parent process died - Loss of battery status"
+
+NOTIFYFLAG ONLINE   SYSLOG+WALL
+NOTIFYFLAG ONBATT   SYSLOG+WALL
+NOTIFYFLAG LOWBATT  SYSLOG+WALL
+NOTIFYFLAG FSD      SYSLOG+WALL
+NOTIFYFLAG COMMOK   SYSLOG
+NOTIFYFLAG COMMBAD  SYSLOG+WALL
+NOTIFYFLAG SHUTDOWN SYSLOG+WALL
+NOTIFYFLAG REPLBATT SYSLOG+WALL
+NOTIFYFLAG NOCOMM   SYSLOG+WALL
+NOTIFYFLAG NOPARENT SYSLOG+WALL
