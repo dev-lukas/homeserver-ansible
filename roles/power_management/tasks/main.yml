@@ -1,6 +1,13 @@
 ---
 # Power management tasks
 
+- name: Include CPU frequency scaling configuration
+  ansible.builtin.include_tasks: cpufreq.yml
+  when: cpu_governor_enabled | default(true)
+  tags:
+    - cpufreq
+    - power
+
 - name: Include powertop configuration
   ansible.builtin.include_tasks: powertop.yml
   tags:

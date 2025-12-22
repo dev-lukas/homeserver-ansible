@@ -1,0 +1,15 @@
+---
+# CPU frequency scaling - powersave governor
+
+- name: Set powersave governor for all CPUs
+  ansible.builtin.shell: |
+    echo "powersave" | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor >/dev/null
+  changed_when: false
+
+- name: Configure powersave governor cron job on reboot
+  ansible.builtin.cron:
+    name: "Set CPU governor to powersave"
+    special_time: reboot
+    job: "(sleep 60 && echo 'powersave' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor >/dev/null)"
+    user: root
+    state: present
