@@ -1,0 +1,23 @@
+---
+# Disable Proxmox cluster and HA services for standalone node
+
+- name: Stop and disable Proxmox cluster services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop:
+    - pve-ha-lrm
+    - pve-ha-crm
+    - corosync
+  failed_when: false
+
+- name: Mask cluster services to prevent starting
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    masked: true
+  loop:
+    - pve-ha-lrm
+    - pve-ha-crm
+    - corosync
+  failed_when: false

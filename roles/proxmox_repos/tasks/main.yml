@@ -25,3 +25,9 @@
   ansible.builtin.apt:
     update_cache: true
   when: enterprise_repos_removed.changed or nosub_repo_added.changed
+
+- name: Include cluster services disable tasks
+  ansible.builtin.include_tasks: disable_cluster.yml
+  when: proxmox_disable_cluster | default(true)
+  tags:
+    - cluster
