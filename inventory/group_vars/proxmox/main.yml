@@ -1,0 +1,6 @@
+---
+# Variables specific to Proxmox hosts
+
+# Power management settings
+powertop_auto_tune: true
+ltr_ignore_enabled: true

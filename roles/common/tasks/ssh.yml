@@ -3,14 +3,14 @@
 
 - name: Ensure .ssh directory exists
   ansible.builtin.file:
-    path: "{{ ansible_env.HOME }}/.ssh"
+    path: "{{ ansible_facts['env']['HOME'] }}/.ssh"
     state: directory
     mode: "0700"
-    owner: "{{ ansible_user }}"
+    owner: "{{ ansible_facts['user_id'] }}"
 
 - name: Add authorized SSH keys
   ansible.posix.authorized_key:
-    user: "{{ ansible_user }}"
+    user: "{{ ansible_facts['user_id'] }}"
     key: "{{ item }}"
     state: present
   loop: "{{ ssh_authorized_keys }}"
