@@ -24,3 +24,9 @@
       tags:
         - ups
         - nut
+
+    - role: adguard_lxc
+      tags:
+        - adguard
+        - lxc
+        - containers

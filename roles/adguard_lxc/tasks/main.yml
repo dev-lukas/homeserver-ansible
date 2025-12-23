@@ -1,0 +1,81 @@
+---
+# AdGuard Home LXC role
+# Creates an Alpine LXC container, hardens it, and installs AdGuard Home
+
+- name: Download Alpine LXC template if not present
+  ansible.builtin.command:
+    cmd: pveam download local alpine-3.22-default_20250617_amd64.tar.xz
+  args:
+    creates: /var/lib/vz/template/cache/alpine-3.22-default_20250617_amd64.tar.xz
+  register: template_download
+
+- name: Check if LXC container exists
+  ansible.builtin.command:
+    cmd: "pct status {{ adguard_vmid }}"
+  register: container_status
+  failed_when: false
+  changed_when: false
+
+- name: Create AdGuard Home LXC container
+  ansible.builtin.command:
+    cmd: >
+      pct create {{ adguard_vmid }} {{ adguard_template }}
+      --hostname {{ adguard_hostname }}
+      --storage {{ adguard_storage }}
+      --rootfs {{ adguard_storage }}:{{ adguard_disk_size }}
+      --memory {{ adguard_memory }}
+      --swap {{ adguard_swap }}
+      --cores {{ adguard_cores }}
+      --net0 name=eth0,bridge={{ adguard_bridge }},ip={{ adguard_ip }}/{{ adguard_netmask }},gw={{ adguard_gateway }}
+      --unprivileged {{ '1' if adguard_unprivileged else '0' }}
+      --features nesting={{ '1' if adguard_nesting else '0' }}
+      --onboot 1
+      --start 0
+  when: container_status.rc != 0
+
+- name: Start the LXC container
+  ansible.builtin.command:
+    cmd: "pct start {{ adguard_vmid }}"
+  register: start_result
+  failed_when: false
+  changed_when: start_result.rc == 0
+
+- name: Wait for container to be ready
+  ansible.builtin.pause:
+    seconds: 5
+  when: start_result.changed
+
+- name: Update container packages
+  ansible.builtin.command:
+    cmd: "pct exec {{ adguard_vmid }} -- apk update"
+  changed_when: false
+
+- name: Upgrade container packages
+  ansible.builtin.command:
+    cmd: "pct exec {{ adguard_vmid }} -- apk upgrade"
+  changed_when: false
+
+- name: Install required packages in container
+  ansible.builtin.command:
+    cmd: "pct exec {{ adguard_vmid }} -- apk add --no-cache curl ca-certificates bash"
+  changed_when: false
+
+- name: Enable passwordless root console login
+  ansible.builtin.command:
+    cmd: "pct exec {{ adguard_vmid }} -- sed -i 's|^root:.*|root::0:0:root:/root:/bin/ash|' /etc/passwd"
+  changed_when: false
+
+- name: Allow root login without password on console
+  ansible.builtin.command:
+    cmd: "pct exec {{ adguard_vmid }} -- sh -c 'echo pts/0 >> /etc/securetty 2>/dev/null || true'"
+  changed_when: false
+
+- name: Apply security hardening in container
+  ansible.builtin.include_tasks: harden_container.yml
+
+- name: Install AdGuard Home
+  ansible.builtin.include_tasks: install_adguard.yml
+
+- name: Configure Proxmox firewall for AdGuard
+  ansible.builtin.include_tasks: firewall.yml
+  when: adguard_configure_firewall | default(true)
