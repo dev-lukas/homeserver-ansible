@@ -30,3 +30,9 @@
         - adguard
         - lxc
         - containers
+
+    - role: homeassistant_vm
+      tags:
+        - homeassistant
+        - haos
+        - vm

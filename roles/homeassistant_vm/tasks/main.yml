@@ -1,0 +1,109 @@
+---
+# Home Assistant OS VM role
+# Creates a hardened Home Assistant OS VM on Proxmox
+
+- name: Check if Home Assistant VM already exists
+  ansible.builtin.command:
+    cmd: "qm status {{ haos_vmid }}"
+  register: haos_vm_check
+  changed_when: false
+  failed_when: false
+
+- name: Download and create Home Assistant OS VM
+  when: haos_vm_check.rc != 0
+  block:
+    - name: Create temporary directory for HAOS image
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: haos_
+      register: haos_temp_dir
+
+    - name: Download Home Assistant OS image
+      ansible.builtin.get_url:
+        url: "{{ haos_image_url }}"
+        dest: "{{ haos_temp_dir.path }}/haos.qcow2.xz"
+        mode: "0644"
+        timeout: 300
+      register: haos_download
+
+    - name: Extract HAOS image
+      ansible.builtin.command:
+        cmd: "xz -d {{ haos_temp_dir.path }}/haos.qcow2.xz"
+      when: haos_download.changed
+
+    - name: Create UEFI vars storage for VM
+      ansible.builtin.command:
+        cmd: >
+          qm create {{ haos_vmid }}
+          --name {{ haos_name }}
+          --memory {{ haos_memory }}
+          --cores {{ haos_cores }}
+          --cpu {{ haos_cpu_type }}
+          --machine {{ haos_machine_type }}
+          --bios {{ haos_bios }}
+          --scsihw {{ haos_scsihw }}
+          --net0 virtio,bridge={{ haos_bridge }}{% if haos_mac %},macaddr={{ haos_mac }}{% endif %}
+          --ostype l26
+          --agent enabled=1
+          --onboot {{ '1' if haos_start_on_boot else '0' }}
+          --efidisk0 {{ haos_storage }}:1,efitype=4m,pre-enrolled-keys=0
+      register: haos_vm_create
+
+    - name: Import HAOS disk to storage
+      ansible.builtin.command:
+        cmd: "qm importdisk {{ haos_vmid }} {{ haos_temp_dir.path }}/haos.qcow2 {{ haos_storage }}"
+      register: haos_import_disk
+
+    - name: Attach imported disk to VM
+      ansible.builtin.command:
+        cmd: "qm set {{ haos_vmid }} --scsi0 {{ haos_storage }}:vm-{{ haos_vmid }}-disk-1,discard=on,ssd=1"
+
+    - name: Resize disk to desired size
+      ansible.builtin.command:
+        cmd: "qm resize {{ haos_vmid }} scsi0 {{ haos_disk_size }}"
+
+    - name: Set boot order to SCSI disk
+      ansible.builtin.command:
+        cmd: "qm set {{ haos_vmid }} --boot order=scsi0"
+
+    - name: Clean up temporary directory
+      ansible.builtin.file:
+        path: "{{ haos_temp_dir.path }}"
+        state: absent
+
+- name: Configure USB passthrough for Zigbee/Z-Wave devices
+  when: haos_usb_passthrough | length > 0
+  ansible.builtin.command:
+    cmd: "qm set {{ haos_vmid }} --usb{{ idx }} host={{ item }},usb3=1"
+  loop: "{{ haos_usb_passthrough }}"
+  loop_control:
+    index_var: idx
+
+- name: Configure Proxmox firewall for Home Assistant
+  when: haos_configure_firewall | bool
+  ansible.builtin.include_tasks: firewall.yml
+
+- name: Apply VM hardening settings
+  ansible.builtin.include_tasks: harden_vm.yml
+
+- name: Start Home Assistant VM
+  ansible.builtin.command:
+    cmd: "qm start {{ haos_vmid }}"
+  register: haos_start
+  changed_when: "'already running' not in haos_start.stderr"
+  failed_when: haos_start.rc != 0 and 'already running' not in haos_start.stderr
+
+- name: Display Home Assistant access information
+  ansible.builtin.debug:
+    msg: |
+      Home Assistant OS VM created successfully!
+      
+      VM ID: {{ haos_vmid }}
+      IP Address: {{ haos_ip }} (configure in HAOS after first boot)
+      Web Interface: http://{{ haos_ip }}:{{ haos_web_port }}
+      
+      First boot takes 5-10 minutes. Access the console via Proxmox web UI.
+      After boot, Home Assistant will be available at the URL above.
+      
+      Note: Configure static IP in Home Assistant after first boot:
+      Settings -> System -> Network -> Configure IPv4
