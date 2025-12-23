@@ -1,0 +1,56 @@
+---
+# Configure Proxmox firewall for AdGuard LXC container
+
+# Enable firewall at datacenter level using API
+- name: Enable datacenter firewall
+  ansible.builtin.command:
+    cmd: pvesh set /cluster/firewall/options --enable 1
+  changed_when: false
+
+# Configure container-specific firewall
+- name: Ensure firewall config directory exists
+  ansible.builtin.file:
+    path: /etc/pve/firewall
+    state: directory
+    mode: "0755"
+
+- name: Configure AdGuard container firewall
+  ansible.builtin.shell:
+    cmd: |
+      cat > /etc/pve/firewall/{{ adguard_vmid }}.fw << FWEOF
+      [OPTIONS]
+      enable: 1
+      policy_in: DROP
+      policy_out: ACCEPT
+      
+      [RULES]
+      # DNS (UDP and TCP)
+      IN ACCEPT -p udp -dport {{ adguard_dns_port }} -log nolog
+      IN ACCEPT -p tcp -dport {{ adguard_dns_port }} -log nolog
+      
+      # AdGuard Home Web Interface
+      IN ACCEPT -p tcp -dport {{ adguard_web_port }} -log nolog
+      
+      # HTTPS (if TLS enabled)
+      IN ACCEPT -p tcp -dport {{ adguard_web_port_ssl }} -log nolog
+      
+      # DNS over TLS
+      IN ACCEPT -p tcp -dport 853 -log nolog
+      
+      # DNS over QUIC
+      IN ACCEPT -p udp -dport 784 -log nolog
+      IN ACCEPT -p udp -dport 8853 -log nolog
+      
+      # SSH access to container
+      IN ACCEPT -p tcp -dport 22 -log nolog
+      
+      # Allow ICMP (ping)
+      IN ACCEPT -p icmp
+      FWEOF
+  notify: Reload pve-firewall
+
+- name: Enable firewall on container network interface
+  ansible.builtin.shell:
+    cmd: |
+      pct set {{ adguard_vmid }} --net0 name=eth0,bridge={{ adguard_bridge }},ip={{ adguard_ip }}/{{ adguard_netmask }},gw={{ adguard_gateway }},firewall=1
+  changed_when: false

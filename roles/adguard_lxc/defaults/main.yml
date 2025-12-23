@@ -1,0 +1,35 @@
+---
+# Default variables for AdGuard LXC role
+
+# Container settings
+adguard_vmid: 100
+adguard_hostname: "adguard"
+adguard_template: "local:vztmpl/alpine-3.22-default_20250617_amd64.tar.xz"
+adguard_storage: "vmpool"
+adguard_disk_size: "2"
+adguard_memory: 256
+adguard_swap: 128
+adguard_cores: 1
+
+# Network configuration
+adguard_bridge: "vmbr0"
+adguard_ip: "192.168.178.2"
+adguard_gateway: "192.168.178.1"
+adguard_netmask: "24"
+
+# AdGuard Home ports
+adguard_dns_port: 53
+adguard_web_port: 3000
+adguard_web_port_ssl: 443
+
+# Security settings
+adguard_unprivileged: true
+adguard_nesting: false
+
+# Firewall
+adguard_configure_firewall: true
+
+# AdGuard admin user (credentials should be in vault)
+# Generate hash with: htpasswd -nbB "" "yourpassword" | cut -d: -f2
+adguard_admin_user: "{{ vault_adguard_admin_user | default('admin') }}"
+adguard_admin_password_hash: "{{ vault_adguard_admin_password_hash }}"
