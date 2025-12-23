@@ -1,0 +1,17 @@
+---
+# Handlers for Home Assistant OS VM role
+
+- name: Restart Home Assistant VM
+  ansible.builtin.command:
+    cmd: "qm reboot {{ haos_vmid }}"
+  listen: "restart haos"
+
+- name: Stop Home Assistant VM
+  ansible.builtin.command:
+    cmd: "qm shutdown {{ haos_vmid }}"
+  listen: "stop haos"
+
+- name: Start Home Assistant VM
+  ansible.builtin.command:
+    cmd: "qm start {{ haos_vmid }}"
+  listen: "start haos"

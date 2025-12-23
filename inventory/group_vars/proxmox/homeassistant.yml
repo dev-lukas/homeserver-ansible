@@ -1,0 +1,35 @@
+---
+# Home Assistant OS VM configuration
+# Override defaults here for your environment
+
+# VM identification
+haos_vmid: 101
+haos_name: "homeassistant"
+
+# Resources - adjust based on your usage
+# Home Assistant recommends 2GB+ RAM and 2+ cores
+haos_memory: 2048
+haos_cores: 2
+haos_disk_size: "32G"
+
+# Network - set your desired static IP
+# Note: IP must be configured in HAOS after first boot
+haos_ip: "192.168.178.3"
+haos_gateway: "192.168.178.1"
+haos_netmask: "24"
+
+# Storage pool (must match your Proxmox storage)
+haos_storage: "vmpool"
+
+# Enable integrations that need additional firewall ports
+haos_enable_mqtt: false      # Enable if using Mosquitto add-on externally
+haos_enable_homekit: false   # Enable if using HomeKit integration
+haos_enable_matter: false    # Enable if using Matter devices
+haos_enable_zwave_js: false  # Enable if accessing Z-Wave JS UI externally
+
+# USB passthrough for Zigbee/Z-Wave coordinators
+# Find device IDs with: lsusb
+# haos_usb_passthrough:
+#   - "10c4:ea60"  # Silicon Labs Zigbee (e.g., Sonoff Zigbee 3.0)
+#   - "1a86:55d4"  # Sonoff Zigbee 3.0 USB Dongle Plus
+#   - "0658:0200"  # Aeotec Z-Stick

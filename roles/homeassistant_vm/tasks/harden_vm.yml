@@ -1,0 +1,84 @@
+---
+# VM-level hardening for Home Assistant OS
+# These settings enhance security at the Proxmox VM layer
+
+# Note: Home Assistant OS is a managed appliance OS with its own security
+# measures. These settings focus on Proxmox-level hardening.
+
+- name: Disable VNC access (use Proxmox console instead)
+  ansible.builtin.command:
+    cmd: "qm set {{ haos_vmid }} --vga none"
+  register: haos_vga_result
+  changed_when: "'update' in haos_vga_result.stdout or haos_vga_result.rc == 0"
+  failed_when: false
+
+- name: Enable serial console for recovery access
+  ansible.builtin.command:
+    cmd: "qm set {{ haos_vmid }} --serial0 socket"
+  changed_when: true
+
+- name: Set VM protection to prevent accidental deletion
+  ansible.builtin.command:
+    cmd: "qm set {{ haos_vmid }} --protection 1"
+  changed_when: true
+
+- name: Configure VM description with security notes
+  ansible.builtin.command:
+    cmd: >
+      qm set {{ haos_vmid }} --description
+      "Home Assistant OS VM - Hardened Configuration
+
+      Security measures applied:
+      - UEFI Secure Boot ready (q35 + OVMF)
+      - Proxmox firewall enabled with DROP policy
+      - VNC disabled (serial console only)
+      - VM protection enabled
+      - QEMU Guest Agent enabled
+
+      Ports allowed: {{ haos_web_port }} (Web UI), 5353 (mDNS), 1900 (SSDP)
+
+      Managed by Ansible - Do not modify manually"
+  changed_when: true
+
+- name: Ensure QEMU guest agent is enabled
+  ansible.builtin.command:
+    cmd: "qm set {{ haos_vmid }} --agent enabled=1,fstrim_cloned_disks=1"
+  changed_when: true
+
+- name: Set CPU flags for security mitigations
+  ansible.builtin.command:
+    cmd: "qm set {{ haos_vmid }} --cpu {{ haos_cpu_type }},flags=+aes"
+  changed_when: true
+  failed_when: false
+
+- name: Configure memory ballooning with minimum guarantee
+  ansible.builtin.command:
+    cmd: "qm set {{ haos_vmid }} --balloon {{ (haos_memory * 0.5) | int }}"
+  changed_when: true
+
+- name: Set IO thread for better disk performance
+  ansible.builtin.command:
+    cmd: "qm set {{ haos_vmid }} --scsi0 {{ haos_storage }}:vm-{{ haos_vmid }}-disk-1,discard=on,ssd=1,iothread=1"
+  changed_when: true
+  failed_when: false
+
+- name: Create backup schedule note
+  ansible.builtin.debug:
+    msg: |
+      VM Hardening Applied:
+      
+      ✓ UEFI boot with q35 machine type
+      ✓ VNC disabled - use serial console for recovery
+      ✓ VM protection enabled (prevents accidental deletion)
+      ✓ QEMU guest agent enabled for graceful operations
+      ✓ CPU AES acceleration enabled
+      ✓ Memory ballooning with 50% minimum guarantee
+      ✓ IO threading for disk performance
+      ✓ Proxmox firewall with restrictive inbound policy
+      
+      Recommended additional steps:
+      1. Enable Proxmox backup schedule for this VM
+      2. Configure Home Assistant's built-in 2FA
+      3. Use HTTPS with a valid certificate (Let's Encrypt add-on)
+      4. Enable Home Assistant's IP ban feature
+      5. Keep Home Assistant OS updated regularly

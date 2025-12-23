@@ -1,0 +1,60 @@
+---
+# Default variables for Home Assistant OS VM role
+
+# VM settings
+haos_vmid: 101
+haos_name: "homeassistant"
+haos_storage: "vmpool"
+
+# Home Assistant OS version
+haos_version: "16.3"
+haos_image_url: "https://github.com/home-assistant/operating-system/releases/download/{{ haos_version }}/haos_ova-{{ haos_version }}.qcow2.xz"
+haos_image_checksum_url: "https://github.com/home-assistant/operating-system/releases/download/{{ haos_version }}/haos_ova-{{ haos_version }}.qcow2.xz.sha256"
+
+# VM resources (Home Assistant recommends 2GB+ RAM, 2+ cores)
+haos_memory: 2048
+haos_cores: 2
+haos_disk_size: "32G"
+haos_cpu_type: "host"
+
+# Network configuration
+haos_bridge: "vmbr0"
+haos_ip: "192.168.178.3"
+haos_gateway: "192.168.178.1"
+haos_netmask: "24"
+haos_mac: ""  # Leave empty for auto-generated, or specify like "AA:BB:CC:DD:EE:FF"
+
+# VM hardware settings
+haos_machine_type: "q35"
+haos_bios: "ovmf"  # UEFI boot required for HAOS
+haos_scsihw: "virtio-scsi-single"
+
+# Security/Firewall settings
+haos_configure_firewall: true
+haos_start_on_boot: true
+
+# Home Assistant ports
+haos_web_port: 8123
+haos_web_port_ssl: 8123  # HAOS uses same port with auto-redirect
+
+# Additional ports for common integrations (enable as needed)
+haos_enable_mqtt: false
+haos_mqtt_port: 1883
+haos_mqtt_port_ssl: 8883
+
+haos_enable_homekit: false
+haos_homekit_port: 21063
+
+haos_enable_matter: false
+haos_matter_port: 5540
+
+haos_enable_zwave_js: false
+haos_zwave_js_port: 3000
+
+# USB passthrough for Zigbee/Z-Wave sticks (list of USB device IDs)
+# Format: "vendorid:productid" e.g., "10c4:ea60" for Silicon Labs
+haos_usb_passthrough: []
+# Example:
+# haos_usb_passthrough:
+#   - "10c4:ea60"  # Zigbee coordinator
+#   - "0658:0200"  # Z-Wave stick
