@@ -1,0 +1,81 @@
+---
+# Default variables for Reverse Proxy LXC role
+
+# Container settings
+reverse_proxy_vmid: 103
+reverse_proxy_hostname: "reverse-proxy"
+reverse_proxy_template: "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
+reverse_proxy_storage: "vmpool"
+reverse_proxy_disk_size: "8"
+reverse_proxy_memory: 512
+reverse_proxy_swap: 256
+reverse_proxy_cores: 2
+
+# Network configuration
+reverse_proxy_bridge: "vmbr0"
+reverse_proxy_ip: "192.168.178.4"
+reverse_proxy_gateway: "192.168.178.1"
+reverse_proxy_netmask: "24"
+reverse_proxy_internal_subnet: "192.168.178.0/24"
+
+# Ports
+reverse_proxy_http_port: 80
+reverse_proxy_https_port: 443
+reverse_proxy_ssh_port: 22
+
+# Security settings
+reverse_proxy_unprivileged: true
+reverse_proxy_nesting: true  # Required for iptables in unprivileged container
+
+# Firewall
+reverse_proxy_configure_firewall: true
+
+# Domain configuration
+reverse_proxy_domain: "lukas-roth.dev"
+reverse_proxy_email: "admin@lukas-roth.dev"
+
+# GeoIP settings - only allow traffic from Germany
+reverse_proxy_geoip_enabled: true  # Set to false to disable GeoIP blocking
+reverse_proxy_allowed_countries:
+  - "DE"
+
+# GeoIP database paths
+reverse_proxy_geoip_db_path: "/var/lib/GeoIP"
+reverse_proxy_geoip_country_db: "{{ reverse_proxy_geoip_db_path }}/GeoLite2-Country.mmdb"
+
+# MaxMind GeoIP (account required for downloads)
+# Get license key from: https://www.maxmind.com/en/accounts/current/license-key
+reverse_proxy_maxmind_account_id: "{{ vault_maxmind_account_id | default('') }}"
+reverse_proxy_maxmind_license_key: "{{ vault_maxmind_license_key | default('') }}"
+
+# Hetzner DNS API for Let's Encrypt DNS challenge
+reverse_proxy_hetzner_api_token: "{{ vault_hetzner_api_token }}"
+
+# Nginx settings
+reverse_proxy_nginx_worker_processes: "auto"
+reverse_proxy_nginx_worker_connections: 1024
+
+# CrowdSec settings
+reverse_proxy_crowdsec_enroll_key: "{{ vault_crowdsec_enroll_key | default('') }}"
+
+# SSL settings
+reverse_proxy_ssl_protocols: "TLSv1.2 TLSv1.3"
+reverse_proxy_ssl_ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384"
+
+# Proxy targets (example configuration)
+# Override this in inventory/group_vars
+reverse_proxy_backends: []
+# Example:
+# reverse_proxy_backends:
+#   - name: "homeassistant"
+#     subdomain: "ha"
+#     backend_host: "192.168.178.3"
+#     backend_port: 8123
+#     websocket: true
+#     internal_only: true  # Only accessible from internal network
+#   - name: "adguard"
+#     subdomain: "adguard"
+#     backend_host: "192.168.178.2"
+#     backend_port: 3000
+#     websocket: false
+#     internal_only: true

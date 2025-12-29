@@ -1,0 +1,114 @@
+---
+# Reverse Proxy LXC role
+# Creates a Debian 12 LXC container with Nginx, GeoIP blocking, 
+# CrowdSec, and Let's Encrypt wildcard certificates
+
+- name: Download Debian 13 LXC template if not present
+  ansible.builtin.command:
+    cmd: pveam download local debian-13-standard_13.1-2_amd64.tar.zst
+  args:
+    creates: /var/lib/vz/template/cache/debian-13-standard_13.1-2_amd64.tar.zst
+  register: template_download
+
+- name: Check if LXC container exists
+  ansible.builtin.command:
+    cmd: "pct status {{ reverse_proxy_vmid }}"
+  register: container_status
+  failed_when: false
+  changed_when: false
+
+- name: Create Reverse Proxy LXC container
+  ansible.builtin.command:
+    cmd: >
+      pct create {{ reverse_proxy_vmid }} {{ reverse_proxy_template }}
+      --hostname {{ reverse_proxy_hostname }}
+      --storage {{ reverse_proxy_storage }}
+      --rootfs {{ reverse_proxy_storage }}:{{ reverse_proxy_disk_size }}
+      --memory {{ reverse_proxy_memory }}
+      --swap {{ reverse_proxy_swap }}
+      --cores {{ reverse_proxy_cores }}
+      --net0 name=eth0,bridge={{ reverse_proxy_bridge }},ip={{ reverse_proxy_ip }}/{{ reverse_proxy_netmask }},gw={{ reverse_proxy_gateway }}
+      --unprivileged {{ '1' if reverse_proxy_unprivileged else '0' }}
+      --features nesting={{ '1' if reverse_proxy_nesting else '0' }}
+      --onboot 1
+      --start 0
+  when: container_status.rc != 0
+
+- name: Start the LXC container
+  ansible.builtin.command:
+    cmd: "pct start {{ reverse_proxy_vmid }}"
+  register: start_result
+  failed_when: false
+  changed_when: start_result.rc == 0
+
+- name: Wait for container to be ready
+  ansible.builtin.pause:
+    seconds: 10
+  when: start_result.changed
+
+- name: Wait for container network to be ready
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- ping -c 1 {{ reverse_proxy_gateway }}"
+  register: network_check
+  until: network_check.rc == 0
+  retries: 30
+  delay: 2
+  changed_when: false
+
+- name: Update container packages
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get update"
+  changed_when: false
+
+- name: Upgrade container packages
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get upgrade -y"
+  changed_when: false
+
+- name: Install base packages in container
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get install -y curl wget gnupg2 ca-certificates lsb-release apt-transport-https iptables"
+  changed_when: false
+
+- name: Enable passwordless root console login
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- sed -i 's|^root:[^:]*:|root::|' /etc/shadow"
+  changed_when: false
+
+- name: Configure getty for autologin on console
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'mkdir -p /etc/systemd/system/console-getty.service.d && cat > /etc/systemd/system/console-getty.service.d/autologin.conf << EOF
+      [Service]
+      ExecStart=
+      ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud console 115200,38400,9600 \$TERM
+      EOF'
+  changed_when: false
+
+- name: Reload systemd daemon
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl daemon-reload"
+  changed_when: false
+
+- name: Apply security hardening in container
+  ansible.builtin.include_tasks: harden_container.yml
+
+- name: Install and configure Nginx with GeoIP
+  ansible.builtin.include_tasks: nginx.yml
+
+- name: Configure SSL certificates with Certbot
+  ansible.builtin.include_tasks: certbot.yml
+
+- name: Install and configure CrowdSec
+  ansible.builtin.include_tasks: crowdsec.yml
+
+- name: Configure unattended upgrades
+  ansible.builtin.include_tasks: maintenance.yml
+
+- name: Deploy backend proxy configurations
+  ansible.builtin.include_tasks: backends.yml
+  when: reverse_proxy_backends is defined and reverse_proxy_backends | length > 0
+
+- name: Configure Proxmox firewall for Reverse Proxy
+  ansible.builtin.include_tasks: firewall.yml
+  when: reverse_proxy_configure_firewall | default(true)

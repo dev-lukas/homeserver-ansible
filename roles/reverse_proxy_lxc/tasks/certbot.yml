@@ -1,0 +1,155 @@
+---
+# Install and configure Certbot with Hetzner DNS plugin for wildcard certificates
+# Using pip in a virtual environment (no snap required)
+
+- name: Install Python and pip dependencies
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get install -y python3 python3-pip python3-venv"
+  changed_when: false
+
+- name: Create certbot virtual environment
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- python3 -m venv /opt/certbot"
+  changed_when: false
+
+- name: Upgrade pip in virtual environment
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- /opt/certbot/bin/pip install --upgrade pip"
+  changed_when: false
+
+- name: Install certbot via pip
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- /opt/certbot/bin/pip install certbot"
+  changed_when: false
+
+- name: Install certbot-dns-hetzner-cloud plugin
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- /opt/certbot/bin/pip install certbot-dns-hetzner-cloud"
+  changed_when: false
+
+- name: Create certbot symlink
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- ln -sf /opt/certbot/bin/certbot /usr/local/bin/certbot"
+  changed_when: false
+
+- name: Create letsencrypt directory
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- mkdir -p /etc/letsencrypt"
+  changed_when: false
+
+- name: Create Hetzner API credentials file
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/letsencrypt/hetzner-credentials.ini << EOF
+      dns_hetzner_cloud_api_token = {{ reverse_proxy_hetzner_api_token }}
+      EOF'
+  changed_when: false
+  no_log: true
+
+- name: Secure Hetzner credentials file
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- chmod 600 /etc/letsencrypt/hetzner-credentials.ini"
+  changed_when: false
+
+- name: Check if certificate already exists
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- test -f /etc/letsencrypt/live/{{ reverse_proxy_domain }}/fullchain.pem"
+  register: cert_exists
+  failed_when: false
+  changed_when: false
+
+- name: Obtain wildcard certificate via DNS challenge
+  ansible.builtin.shell:
+    cmd: >
+      pct exec {{ reverse_proxy_vmid }} -- /opt/certbot/bin/certbot certonly
+      --authenticator dns-hetzner-cloud
+      --dns-hetzner-cloud-credentials /etc/letsencrypt/hetzner-credentials.ini
+      --dns-hetzner-cloud-propagation-seconds 60
+      -d "*.{{ reverse_proxy_domain }}"
+      --email "{{ reverse_proxy_email }}"
+      --agree-tos
+      --non-interactive
+  when: cert_exists.rc != 0
+  changed_when: true
+
+- name: Create certificate renewal hook directory
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- mkdir -p /etc/letsencrypt/renewal-hooks/deploy"
+  changed_when: false
+
+- name: Create Nginx reload hook for certificate renewal
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/letsencrypt/renewal-hooks/deploy/nginx-reload.sh << EOF
+      #!/bin/bash
+      systemctl reload nginx
+      EOF'
+  changed_when: false
+
+- name: Make renewal hook executable
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- chmod +x /etc/letsencrypt/renewal-hooks/deploy/nginx-reload.sh"
+  changed_when: false
+
+- name: Create certbot renewal systemd service
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/systemd/system/certbot-renewal.service << EOF
+      [Unit]
+      Description=Certbot Renewal
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/opt/certbot/bin/certbot renew --quiet
+
+      [Install]
+      WantedBy=multi-user.target
+      EOF'
+  changed_when: false
+
+- name: Create certbot renewal systemd timer
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/systemd/system/certbot-renewal.timer << EOF
+      [Unit]
+      Description=Run certbot renewal twice daily
+
+      [Timer]
+      OnCalendar=*-*-* 00,12:00:00
+      RandomizedDelaySec=3600
+      Persistent=true
+
+      [Install]
+      WantedBy=timers.target
+      EOF'
+  changed_when: false
+
+- name: Enable certbot renewal timer
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl enable certbot-renewal.timer"
+  changed_when: false
+
+- name: Start certbot renewal timer
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl start certbot-renewal.timer"
+  changed_when: false
+  failed_when: false
+
+- name: Create wildcard SSL configuration snippet
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/nginx/snippets/ssl-{{ reverse_proxy_domain | replace(".", "-") }}.conf << EOF
+      ssl_certificate /etc/letsencrypt/live/{{ reverse_proxy_domain }}/fullchain.pem;
+      ssl_certificate_key /etc/letsencrypt/live/{{ reverse_proxy_domain }}/privkey.pem;
+      ssl_trusted_certificate /etc/letsencrypt/live/{{ reverse_proxy_domain }}/chain.pem;
+      EOF'
+  changed_when: false
+  when: cert_exists.rc == 0 or true  # Always create, even if cert doesn't exist yet
+
+- name: Reload Nginx to apply certificate changes
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl reload nginx"
+  changed_when: false
+  failed_when: false

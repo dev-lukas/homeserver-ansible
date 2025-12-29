@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  author: Lukas Roth
+  description: Deploy a secure reverse proxy LXC container on Proxmox with Nginx, GeoIP blocking, CrowdSec, and Let's Encrypt wildcard certificates
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Debian
+      versions:
+        - trixie
+  galaxy_tags:
+    - nginx
+    - reverseproxy
+    - security
+    - crowdsec
+    - geoip
+    - letsencrypt
+    - proxmox
+    - lxc
+
+dependencies: []

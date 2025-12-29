@@ -1,0 +1,118 @@
+---
+# Deploy backend proxy configurations
+# This task file is included when reverse_proxy_backends is defined
+
+- name: Create ACME challenge directory
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- mkdir -p /var/www/letsencrypt/.well-known/acme-challenge"
+  changed_when: false
+
+- name: Set permissions on ACME challenge directory
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- chown -R www-data:www-data /var/www/letsencrypt"
+  changed_when: false
+
+- name: Create internal-only access control snippet
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/nginx/snippets/internal-only.conf << EOF
+      # Only allow access from internal network
+      allow {{ reverse_proxy_internal_subnet }};
+      deny all;
+      EOF'
+  changed_when: false
+
+- name: Deploy backend configurations
+  ansible.builtin.shell:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/nginx/sites-available/{{ item.name }}.conf << VHOSTEOF
+      # {{ item.name }} - {{ item.subdomain }}.{{ reverse_proxy_domain }}
+      # Managed by Ansible - do not edit manually
+      # Access: {{ "internal only" if item.internal_only | default(false) else "external (with geo-blocking)" }}
+
+      # Upstream definition
+      upstream {{ item.name }}_backend {
+          server {{ item.backend_host }}:{{ item.backend_port }};
+          keepalive 32;
+      }
+
+      # HTTP redirect to HTTPS
+      server {
+          listen 80;
+          listen [::]:80;
+          server_name {{ item.subdomain }}.{{ reverse_proxy_domain }};
+
+          # Access control
+          {{ "include /etc/nginx/snippets/internal-only.conf;" if item.internal_only | default(false) else "include /etc/nginx/snippets/geo-block.conf;" }}
+
+          # ACME challenge location (always allowed)
+          location /.well-known/acme-challenge/ {
+              allow all;
+              root /var/www/letsencrypt;
+          }
+
+          # Redirect all HTTP traffic to HTTPS
+          location / {
+              return 301 https://\$host\$request_uri;
+          }
+      }
+
+      # HTTPS server
+      server {
+          listen 443 ssl;
+          listen [::]:443 ssl;
+          http2 on;
+          server_name {{ item.subdomain }}.{{ reverse_proxy_domain }};
+
+          # SSL certificates (wildcard)
+          include /etc/nginx/snippets/ssl-{{ reverse_proxy_domain | replace(".", "-") }}.conf;
+          include /etc/nginx/snippets/ssl-params.conf;
+
+          # Access control
+          {{ "include /etc/nginx/snippets/internal-only.conf;" if item.internal_only | default(false) else "include /etc/nginx/snippets/geo-block.conf;" }}
+
+          # Logging
+          access_log /var/log/nginx/{{ item.name }}.access.log json_combined;
+          error_log /var/log/nginx/{{ item.name }}.error.log warn;
+
+          # Proxy to backend
+          location / {
+              include /etc/nginx/snippets/{{ 'websocket' if item.websocket | default(false) else 'proxy' }}-params.conf;
+              proxy_pass {{ item.backend_protocol | default('http') }}://{{ item.name }}_backend;
+{% if item.backend_protocol | default('http') == 'https' %}
+              proxy_ssl_verify off;
+              proxy_ssl_server_name on;
+{% endif %}
+          }
+
+          # Health check endpoint
+          location /nginx-health {
+              access_log off;
+              return 200 "OK\n";
+              add_header Content-Type text/plain;
+          }
+      }
+      VHOSTEOF'
+  loop: "{{ reverse_proxy_backends }}"
+  when: reverse_proxy_backends is defined and reverse_proxy_backends | length > 0
+  notify: Reload nginx
+
+- name: Enable backend sites
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- ln -sf /etc/nginx/sites-available/{{ item.name }}.conf /etc/nginx/sites-enabled/{{ item.name }}.conf"
+  loop: "{{ reverse_proxy_backends }}"
+  when: reverse_proxy_backends is defined and reverse_proxy_backends | length > 0
+  changed_when: false
+
+- name: Test Nginx configuration after adding backends
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- nginx -t"
+  changed_when: false
+  when: reverse_proxy_backends is defined and reverse_proxy_backends | length > 0
+
+- name: Reload Nginx to apply backend configurations
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl reload nginx"
+  changed_when: false
+  when: reverse_proxy_backends is defined and reverse_proxy_backends | length > 0
+  failed_when: false

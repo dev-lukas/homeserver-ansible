@@ -36,3 +36,10 @@
         - homeassistant
         - haos
         - vm
+
+    - role: reverse_proxy_lxc
+      tags:
+        - reverse_proxy
+        - nginx
+        - lxc
+        - containers

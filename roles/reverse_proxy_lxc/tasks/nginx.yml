@@ -1,0 +1,334 @@
+---
+# Install and configure Nginx with GeoIP2 module for geo-blocking
+# Using Debian's native Nginx package for GeoIP2 module compatibility
+
+- name: Update apt cache
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get update"
+  changed_when: false
+
+- name: Install Nginx and dependencies from Debian repos
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get install -y nginx libnginx-mod-http-geoip2 libnginx-mod-stream libmaxminddb0 libmaxminddb-dev mmdb-bin geoipupdate"
+  changed_when: false
+
+- name: Create GeoIP database directory
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- mkdir -p {{ reverse_proxy_geoip_db_path }}"
+  changed_when: false
+
+- name: Configure geoipupdate
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/GeoIP.conf << EOF
+      AccountID {{ reverse_proxy_maxmind_account_id }}
+      LicenseKey {{ reverse_proxy_maxmind_license_key }}
+      EditionIDs GeoLite2-Country GeoLite2-City
+      DatabaseDirectory {{ reverse_proxy_geoip_db_path }}
+      EOF'
+  changed_when: false
+  when: reverse_proxy_maxmind_account_id | length > 0 and reverse_proxy_maxmind_license_key | length > 0
+
+- name: Run initial GeoIP database update
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- geoipupdate"
+  changed_when: false
+  failed_when: false
+  when: reverse_proxy_maxmind_account_id | length > 0 and reverse_proxy_maxmind_license_key | length > 0
+
+- name: Create GeoIP update systemd service
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/systemd/system/geoip-update.service << EOF
+      [Unit]
+      Description=Update GeoIP2 databases
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/bin/geoipupdate
+      ExecStartPost=/usr/bin/systemctl reload nginx
+
+      [Install]
+      WantedBy=multi-user.target
+      EOF'
+  changed_when: false
+
+- name: Create GeoIP update systemd timer
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/systemd/system/geoip-update.timer << EOF
+      [Unit]
+      Description=Weekly GeoIP database update
+
+      [Timer]
+      OnCalendar=weekly
+      RandomizedDelaySec=3600
+      Persistent=true
+
+      [Install]
+      WantedBy=timers.target
+      EOF'
+  changed_when: false
+
+- name: Enable GeoIP update timer
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl enable geoip-update.timer"
+  changed_when: false
+
+- name: Start GeoIP update timer
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl start geoip-update.timer"
+  changed_when: false
+  failed_when: false
+
+- name: Create Nginx configuration directories
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- mkdir -p /etc/nginx/conf.d /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/snippets"
+  changed_when: false
+
+- name: Create SSL directory
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- mkdir -p /etc/nginx/ssl"
+  changed_when: false
+
+- name: Generate DH parameters (this may take a while)
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- openssl dhparam -out /etc/nginx/ssl/dhparam.pem 2048"
+  args:
+    creates: /etc/nginx/ssl/dhparam.pem
+  changed_when: false
+  failed_when: false
+
+- name: Create main Nginx configuration
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/nginx/nginx.conf << EOFNGINX
+      user www-data;
+      worker_processes {{ reverse_proxy_nginx_worker_processes }};
+      error_log /var/log/nginx/error.log warn;
+      pid /var/run/nginx.pid;
+
+      # Load GeoIP2 module
+      load_module modules/ngx_http_geoip2_module.so;
+
+      events {
+          worker_connections {{ reverse_proxy_nginx_worker_connections }};
+          use epoll;
+          multi_accept on;
+      }
+
+      http {
+          include /etc/nginx/mime.types;
+          default_type application/octet-stream;
+
+          # Logging format
+          log_format main '"'"'\$remote_addr - \$remote_user [\$time_local] "\$request" '"'"'
+                          '"'"'\$status \$body_bytes_sent "\$http_referer" '"'"'
+                          '"'"'"\$http_user_agent" "\$http_x_forwarded_for" '"'"'
+                          '"'"'country=\$geoip2_data_country_code'"'"';
+
+          log_format json_combined escape=json
+          '"'"'{"time":"\$time_iso8601","remote_addr":"\$remote_addr",'"'"'
+          '"'"'"remote_user":"\$remote_user","request":"\$request",'"'"'
+          '"'"'"status":\$status,"body_bytes_sent":\$body_bytes_sent,'"'"'
+          '"'"'"request_time":\$request_time,"http_referrer":"\$http_referer",'"'"'
+          '"'"'"http_user_agent":"\$http_user_agent","country":"\$geoip2_data_country_code"}'"'"';
+
+          access_log /var/log/nginx/access.log json_combined;
+
+          # Performance settings
+          sendfile on;
+          tcp_nopush on;
+          tcp_nodelay on;
+          keepalive_timeout 65;
+          types_hash_max_size 2048;
+          server_tokens off;
+
+          # Buffer settings
+          client_body_buffer_size 16k;
+          client_header_buffer_size 1k;
+          client_max_body_size 100m;
+          large_client_header_buffers 4 8k;
+
+          # Timeout settings
+          client_body_timeout 60;
+          client_header_timeout 60;
+          send_timeout 60;
+
+          # Gzip compression
+          gzip on;
+          gzip_vary on;
+          gzip_proxied any;
+          gzip_comp_level 6;
+          gzip_types text/plain text/css text/xml application/json application/javascript application/rss+xml application/atom+xml image/svg+xml;
+
+          # GeoIP2 configuration
+          geoip2 {{ reverse_proxy_geoip_country_db }} {
+              auto_reload 60m;
+              \$geoip2_metadata_country_build metadata build_epoch;
+              \$geoip2_data_country_code country iso_code;
+              \$geoip2_data_country_name country names en;
+          }
+
+          # Map for geo-blocking - only allow specified countries
+          map \$geoip2_data_country_code \$allowed_country {
+              default no;
+      {% for country in reverse_proxy_allowed_countries %}
+              {{ country }} yes;
+      {% endfor %}
+              "" yes;  # Allow requests without country (internal/local)
+          }
+
+          # Include additional configurations
+          include /etc/nginx/conf.d/*.conf;
+          include /etc/nginx/sites-enabled/*;
+      }
+      EOFNGINX'
+  changed_when: false
+
+- name: Create geo-blocking snippet
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/nginx/snippets/geo-block.conf << EOF
+      # Geo-blocking - block all non-allowed countries
+      if (\$allowed_country = no) {
+          return 444;
+      }
+      EOF'
+  changed_when: false
+
+- name: Create SSL security snippet
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/nginx/snippets/ssl-params.conf << EOF
+      # SSL Configuration
+      ssl_protocols {{ reverse_proxy_ssl_protocols }};
+      ssl_ciphers {{ reverse_proxy_ssl_ciphers }};
+      ssl_prefer_server_ciphers off;
+      ssl_session_timeout 1d;
+      ssl_session_cache shared:SSL:50m;
+      ssl_session_tickets off;
+
+      # OCSP Stapling (disabled - Let'\''s Encrypt certs may not have OCSP URL)
+      # ssl_stapling on;
+      # ssl_stapling_verify on;
+      resolver 8.8.8.8 8.8.4.4 valid=300s;
+      resolver_timeout 5s;
+
+      # DH Parameters
+      ssl_dhparam /etc/nginx/ssl/dhparam.pem;
+
+      # Security headers
+      add_header X-Frame-Options "SAMEORIGIN" always;
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header X-XSS-Protection "1; mode=block" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+      add_header Permissions-Policy "geolocation=(), midi=(), camera=(), usb=(), magnetometer=(), accelerometer=(), gyroscope=(), microphone=()" always;
+      EOF'
+  changed_when: false
+
+- name: Create proxy headers snippet
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/nginx/snippets/proxy-params.conf << EOF
+      proxy_http_version 1.1;
+      proxy_set_header Host \$host;
+      proxy_set_header X-Real-IP \$remote_addr;
+      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto \$scheme;
+      proxy_set_header X-Forwarded-Host \$host;
+      proxy_set_header X-Forwarded-Port \$server_port;
+      proxy_connect_timeout 60s;
+      proxy_send_timeout 60s;
+      proxy_read_timeout 60s;
+      proxy_buffering off;
+      EOF'
+  changed_when: false
+
+- name: Create websocket headers snippet
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/nginx/snippets/websocket-params.conf << EOF
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade \$http_upgrade;
+      proxy_set_header Connection "upgrade";
+      proxy_set_header Host \$host;
+      proxy_set_header X-Real-IP \$remote_addr;
+      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto \$scheme;
+      proxy_read_timeout 86400;
+      proxy_send_timeout 86400;
+      EOF'
+  changed_when: false
+
+- name: Create default server block (catch-all)
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/nginx/sites-available/default << EOF
+      # Default server - catch all and reject
+      server {
+          listen 80 default_server;
+          listen [::]:80 default_server;
+          server_name _;
+
+          # Apply geo-blocking
+          include /etc/nginx/snippets/geo-block.conf;
+
+          # Return 444 for any unmatched requests
+          return 444;
+      }
+
+      server {
+          listen 443 ssl default_server;
+          listen [::]:443 ssl default_server;
+          http2 on;
+          server_name _;
+
+          # Self-signed fallback certificate (will be replaced by Lets Encrypt)
+          ssl_certificate /etc/nginx/ssl/default.crt;
+          ssl_certificate_key /etc/nginx/ssl/default.key;
+
+          # Apply geo-blocking
+          include /etc/nginx/snippets/geo-block.conf;
+
+          # Return 444 for any unmatched requests
+          return 444;
+      }
+      EOF'
+  changed_when: false
+
+- name: Generate self-signed fallback certificate
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/nginx/ssl/default.key -out /etc/nginx/ssl/default.crt -subj "/CN=localhost"'
+  changed_when: false
+  failed_when: false
+
+- name: Enable default site
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default"
+  changed_when: false
+
+- name: Remove default nginx conf.d files
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- rm -f /etc/nginx/conf.d/default.conf"
+  changed_when: false
+  failed_when: false
+
+- name: Test Nginx configuration
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- nginx -t"
+  changed_when: false
+
+- name: Enable Nginx service
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl enable nginx"
+  changed_when: false
+
+- name: Start Nginx service
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl start nginx"
+  changed_when: false
+  failed_when: false

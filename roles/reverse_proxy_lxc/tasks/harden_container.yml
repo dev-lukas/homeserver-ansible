@@ -1,0 +1,175 @@
+---
+# Security hardening for Reverse Proxy LXC container (Debian 12)
+
+- name: Install OpenSSH server
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get install -y openssh-server"
+  changed_when: false
+
+- name: Disable root password login via SSH
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config"
+  changed_when: false
+
+- name: Disable password authentication for SSH
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config"
+  changed_when: false
+
+- name: Disable challenge response authentication
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- sed -i 's/^#*KbdInteractiveAuthentication.*/KbdInteractiveAuthentication no/' /etc/ssh/sshd_config"
+  changed_when: false
+
+- name: Set SSH protocol version
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- bash -c 'echo \"Protocol 2\" >> /etc/ssh/sshd_config'"
+  changed_when: false
+
+- name: Set SSH MaxAuthTries
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- sed -i 's/^#*MaxAuthTries.*/MaxAuthTries 3/' /etc/ssh/sshd_config"
+  changed_when: false
+
+- name: Set SSH LoginGraceTime
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- sed -i 's/^#*LoginGraceTime.*/LoginGraceTime 20/' /etc/ssh/sshd_config"
+  changed_when: false
+
+- name: Ensure SSH directory exists
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- mkdir -p /root/.ssh"
+  changed_when: false
+
+- name: Set SSH directory permissions
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- chmod 700 /root/.ssh"
+  changed_when: false
+
+- name: Copy SSH authorized keys to container
+  ansible.builtin.shell:
+    cmd: |
+      cat /root/.ssh/authorized_keys | pct exec {{ reverse_proxy_vmid }} -- tee /root/.ssh/authorized_keys > /dev/null
+  changed_when: false
+  failed_when: false
+
+- name: Set authorized_keys permissions
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- chmod 600 /root/.ssh/authorized_keys"
+  changed_when: false
+  failed_when: false
+
+- name: Enable SSH service on boot
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl enable ssh"
+  changed_when: false
+
+- name: Start SSH service
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl start ssh"
+  changed_when: false
+  failed_when: false
+
+- name: Configure sysctl security settings
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/sysctl.d/99-security.conf << EOF
+      # Network security settings
+      net.ipv4.ip_forward = 0
+      net.ipv6.conf.all.forwarding = 0
+
+      # Ignore ICMP redirects
+      net.ipv4.conf.all.accept_redirects = 0
+      net.ipv4.conf.default.accept_redirects = 0
+      net.ipv6.conf.all.accept_redirects = 0
+      net.ipv6.conf.default.accept_redirects = 0
+
+      # Do not send ICMP redirects
+      net.ipv4.conf.all.send_redirects = 0
+      net.ipv4.conf.default.send_redirects = 0
+
+      # Ignore source-routed packets
+      net.ipv4.conf.all.accept_source_route = 0
+      net.ipv4.conf.default.accept_source_route = 0
+      net.ipv6.conf.all.accept_source_route = 0
+      net.ipv6.conf.default.accept_source_route = 0
+
+      # Log martian packets
+      net.ipv4.conf.all.log_martians = 1
+      net.ipv4.conf.default.log_martians = 1
+
+      # Ignore broadcast ICMP requests
+      net.ipv4.icmp_echo_ignore_broadcasts = 1
+
+      # Ignore bogus ICMP responses
+      net.ipv4.icmp_ignore_bogus_error_responses = 1
+
+      # Enable TCP SYN cookie protection
+      net.ipv4.tcp_syncookies = 1
+
+      # Enable reverse path filtering
+      net.ipv4.conf.all.rp_filter = 1
+      net.ipv4.conf.default.rp_filter = 1
+
+      # Disable IPv6 router advertisements
+      net.ipv6.conf.all.accept_ra = 0
+      net.ipv6.conf.default.accept_ra = 0
+      EOF'
+  changed_when: false
+
+- name: Apply sysctl settings
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- sysctl -p /etc/sysctl.d/99-security.conf"
+  changed_when: false
+  failed_when: false
+
+- name: Install fail2ban
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get install -y fail2ban"
+  changed_when: false
+
+- name: Configure fail2ban for SSH
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/fail2ban/jail.local << EOF
+      [DEFAULT]
+      bantime = 3600
+      findtime = 600
+      maxretry = 3
+      backend = systemd
+
+      [sshd]
+      enabled = true
+      port = ssh
+      filter = sshd
+      logpath = /var/log/auth.log
+      maxretry = 3
+      bantime = 3600
+      EOF'
+  changed_when: false
+
+- name: Enable fail2ban service
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl enable fail2ban"
+  changed_when: false
+
+- name: Start fail2ban service
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl start fail2ban"
+  changed_when: false
+  failed_when: false
+
+- name: Set restrictive umask
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- bash -c 'echo \"umask 027\" >> /etc/profile'"
+  changed_when: false
+
+- name: Disable unnecessary services
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl disable {{ item }} || true"
+  loop:
+    - avahi-daemon
+    - cups
+    - rpcbind
+  changed_when: false
+  failed_when: false

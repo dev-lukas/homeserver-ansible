@@ -1,0 +1,233 @@
+---
+# Configure unattended upgrades and maintenance tasks
+
+- name: Install unattended-upgrades
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get install -y unattended-upgrades apt-listchanges"
+  changed_when: false
+
+- name: Configure unattended-upgrades
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/apt/apt.conf.d/50unattended-upgrades << EOF
+      // Unattended-Upgrade configuration for reverse proxy
+
+      Unattended-Upgrade::Allowed-Origins {
+          "\${distro_id}:\${distro_codename}";
+          "\${distro_id}:\${distro_codename}-security";
+          "\${distro_id}ESMApps:\${distro_codename}-apps-security";
+          "\${distro_id}ESM:\${distro_codename}-infra-security";
+          "\${distro_id}:\${distro_codename}-updates";
+          // Nginx repository
+          "nginx:";
+          // CrowdSec repository
+          "crowdsec:";
+      };
+
+      // Packages that will NOT be upgraded automatically
+      Unattended-Upgrade::Package-Blacklist {
+      };
+
+      // Automatically fix interrupted dpkg
+      Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+
+      // Split upgrades to avoid large upgrades at once
+      Unattended-Upgrade::MinimalSteps "true";
+
+      // Install upgrades when the machine is shutting down
+      Unattended-Upgrade::InstallOnShutdown "false";
+
+      // Send email notification (if mail server configured)
+      // Unattended-Upgrade::Mail "admin@example.com";
+
+      // Email only on errors
+      Unattended-Upgrade::MailReport "only-on-error";
+
+      // Remove unused automatically installed kernel-related packages
+      Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+
+      // Remove unused dependencies after upgrade
+      Unattended-Upgrade::Remove-New-Unused-Dependencies "true";
+
+      // Remove unused dependencies
+      Unattended-Upgrade::Remove-Unused-Dependencies "true";
+
+      // Automatically reboot if required
+      Unattended-Upgrade::Automatic-Reboot "false";
+
+      // Automatic reboot time
+      Unattended-Upgrade::Automatic-Reboot-Time "03:00";
+
+      // Enable logging to syslog
+      Unattended-Upgrade::SyslogEnable "true";
+
+      // Logging level
+      Unattended-Upgrade::SyslogFacility "daemon";
+
+      // Only upgrade during a specific time window
+      // Unattended-Upgrade::Update-Days {"Mon";"Tue";"Wed";"Thu";"Fri"};
+
+      // Allow dpkg to be verbose
+      Unattended-Upgrade::Verbose "false";
+
+      // Allow upgrading all packages, not just security
+      Unattended-Upgrade::DevRelease "false";
+      EOF'
+  changed_when: false
+
+- name: Configure automatic updates
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/apt/apt.conf.d/20auto-upgrades << EOF
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::Download-Upgradeable-Packages "1";
+      APT::Periodic::AutocleanInterval "7";
+      EOF'
+  changed_when: false
+
+- name: Enable unattended-upgrades service
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl enable unattended-upgrades"
+  changed_when: false
+
+- name: Start unattended-upgrades service
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl start unattended-upgrades"
+  changed_when: false
+  failed_when: false
+
+- name: Create log rotation configuration for nginx
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/logrotate.d/nginx << EOF
+      /var/log/nginx/*.log {
+          daily
+          missingok
+          rotate 14
+          compress
+          delaycompress
+          notifempty
+          create 0640 www-data adm
+          sharedscripts
+          prerotate
+              if [ -d /etc/logrotate.d/httpd-prerotate ]; then \\
+                  run-parts /etc/logrotate.d/httpd-prerotate; \\
+              fi \\
+          endscript
+          postrotate
+              invoke-rc.d nginx rotate >/dev/null 2>&1
+          endscript
+      }
+      EOF'
+  changed_when: false
+
+- name: Create maintenance summary script
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /usr/local/bin/maintenance-status.sh << EOF
+      #!/bin/bash
+      # Maintenance status script for reverse proxy
+
+      echo "=== Reverse Proxy Maintenance Status ==="
+      echo ""
+
+      echo "=== Service Status ==="
+      systemctl is-active nginx && echo "Nginx: Running" || echo "Nginx: STOPPED"
+      systemctl is-active crowdsec && echo "CrowdSec: Running" || echo "CrowdSec: STOPPED"
+      systemctl is-active crowdsec-nginx-bouncer && echo "CrowdSec Bouncer: Running" || echo "CrowdSec Bouncer: STOPPED"
+      systemctl is-active fail2ban && echo "Fail2ban: Running" || echo "Fail2ban: STOPPED"
+
+      echo ""
+      echo "=== Timer Status ==="
+      systemctl list-timers --no-pager | grep -E "(certbot|geoip|crowdsec)"
+
+      echo ""
+      echo "=== SSL Certificate Status ==="
+      if [ -f /etc/letsencrypt/live/{{ reverse_proxy_domain }}/fullchain.pem ]; then
+          echo "Certificate expires:"
+          openssl x509 -in /etc/letsencrypt/live/{{ reverse_proxy_domain }}/fullchain.pem -noout -enddate
+      else
+          echo "No certificate found"
+      fi
+
+      echo ""
+      echo "=== CrowdSec Decisions ==="
+      cscli decisions list 2>/dev/null | head -20 || echo "No decisions"
+
+      echo ""
+      echo "=== GeoIP Database Status ==="
+      if [ -f {{ reverse_proxy_geoip_country_db }} ]; then
+          echo "GeoIP DB last modified: \$(stat -c %y {{ reverse_proxy_geoip_country_db }})"
+      else
+          echo "GeoIP database not found"
+      fi
+
+      echo ""
+      echo "=== Disk Usage ==="
+      df -h /
+
+      echo ""
+      echo "=== Memory Usage ==="
+      free -h
+
+      echo ""
+      echo "=== Unattended Upgrades Log (last 10 lines) ==="
+      tail -10 /var/log/unattended-upgrades/unattended-upgrades.log 2>/dev/null || echo "No logs"
+      EOF'
+  changed_when: false
+
+- name: Make maintenance script executable
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- chmod +x /usr/local/bin/maintenance-status.sh"
+  changed_when: false
+
+- name: Create daily maintenance check timer
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/systemd/system/maintenance-check.service << EOF
+      [Unit]
+      Description=Daily Maintenance Check
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/maintenance-status.sh
+      StandardOutput=journal
+
+      [Install]
+      WantedBy=multi-user.target
+      EOF'
+  changed_when: false
+
+- name: Create maintenance check timer
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/systemd/system/maintenance-check.timer << EOF
+      [Unit]
+      Description=Daily maintenance status check
+
+      [Timer]
+      OnCalendar=*-*-* 06:00:00
+      Persistent=true
+
+      [Install]
+      WantedBy=timers.target
+      EOF'
+  changed_when: false
+
+- name: Reload systemd daemon
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl daemon-reload"
+  changed_when: false
+
+- name: Enable maintenance check timer
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl enable maintenance-check.timer"
+  changed_when: false
+
+- name: Start maintenance check timer
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl start maintenance-check.timer"
+  changed_when: false
+  failed_when: false

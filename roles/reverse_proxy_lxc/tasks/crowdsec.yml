@@ -1,0 +1,163 @@
+---
+# Install and configure CrowdSec Security Engine with Nginx Bouncer
+
+- name: Install CrowdSec repository using official installer
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- bash -c 'curl -s https://install.crowdsec.net | sh'"
+  changed_when: false
+
+- name: Update apt cache after adding CrowdSec repo
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get update"
+  changed_when: false
+
+- name: Install CrowdSec
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get install -y crowdsec"
+  changed_when: false
+
+- name: Install CrowdSec Nginx collection
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- cscli collections install crowdsecurity/nginx"
+  changed_when: false
+  failed_when: false
+
+- name: Install CrowdSec Linux collection
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- cscli collections install crowdsecurity/linux"
+  changed_when: false
+  failed_when: false
+
+- name: Install CrowdSec SSH collection
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- cscli collections install crowdsecurity/sshd"
+  changed_when: false
+  failed_when: false
+
+- name: Install CrowdSec HTTP-CVE scenarios
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- cscli collections install crowdsecurity/http-cve"
+  changed_when: false
+  failed_when: false
+
+- name: Configure CrowdSec to read Nginx logs
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/crowdsec/acquis.d/nginx.yaml << EOF
+      filenames:
+        - /var/log/nginx/access.log
+        - /var/log/nginx/error.log
+      labels:
+        type: nginx
+      ---
+      source: journalctl
+      journalctl_filter:
+        - "_SYSTEMD_UNIT=nginx.service"
+      labels:
+        type: syslog
+      EOF'
+  changed_when: false
+
+- name: Configure CrowdSec to read auth logs
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/crowdsec/acquis.d/sshd.yaml << EOF
+      filenames:
+        - /var/log/auth.log
+      labels:
+        type: syslog
+      EOF'
+  changed_when: false
+
+- name: Enable CrowdSec service
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl enable crowdsec"
+  changed_when: false
+
+- name: Start CrowdSec service
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl start crowdsec"
+  changed_when: false
+  failed_when: false
+
+- name: Enroll CrowdSec to console (if key provided)
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- cscli console enroll {{ reverse_proxy_crowdsec_enroll_key }}"
+  changed_when: false
+  failed_when: false
+  when: reverse_proxy_crowdsec_enroll_key | length > 0
+
+- name: Install CrowdSec Firewall Bouncer (iptables)
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get install -y crowdsec-firewall-bouncer-iptables"
+  changed_when: false
+
+- name: Enable CrowdSec Firewall bouncer service
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl enable crowdsec-firewall-bouncer"
+  changed_when: false
+
+- name: Start CrowdSec Firewall bouncer service
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl start crowdsec-firewall-bouncer"
+  changed_when: false
+  failed_when: false
+
+- name: Create CrowdSec hub update systemd service
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/systemd/system/crowdsec-update.service << EOF
+      [Unit]
+      Description=Update CrowdSec Hub
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/bin/cscli hub update
+      ExecStartPost=/usr/bin/cscli hub upgrade
+      ExecStartPost=/usr/bin/systemctl reload crowdsec
+
+      [Install]
+      WantedBy=multi-user.target
+      EOF'
+  changed_when: false
+
+- name: Create CrowdSec hub update systemd timer
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/systemd/system/crowdsec-update.timer << EOF
+      [Unit]
+      Description=Daily CrowdSec hub update
+
+      [Timer]
+      OnCalendar=daily
+      RandomizedDelaySec=3600
+      Persistent=true
+
+      [Install]
+      WantedBy=timers.target
+      EOF'
+  changed_when: false
+
+- name: Enable CrowdSec update timer
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl enable crowdsec-update.timer"
+  changed_when: false
+
+- name: Start CrowdSec update timer
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl start crowdsec-update.timer"
+  changed_when: false
+  failed_when: false
+
+- name: Restart CrowdSec to apply all changes
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl restart crowdsec"
+  changed_when: false
+  failed_when: false
+
+- name: Reload systemd daemon
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl daemon-reload"
+  changed_when: false
