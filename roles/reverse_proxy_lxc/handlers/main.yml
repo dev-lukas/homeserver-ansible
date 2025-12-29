@@ -1,0 +1,30 @@
+---
+- name: Reload pve-firewall
+  ansible.builtin.systemd:
+    name: pve-firewall
+    state: restarted
+
+- name: Restart nginx
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl restart nginx"
+  changed_when: false
+
+- name: Reload nginx
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl restart nginx"
+  changed_when: false
+
+- name: Restart crowdsec
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl restart crowdsec"
+  changed_when: false
+
+- name: Restart crowdsec-nginx-bouncer
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl restart crowdsec-nginx-bouncer"
+  changed_when: false
+
+- name: Restart fail2ban
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl restart fail2ban"
+  changed_when: false

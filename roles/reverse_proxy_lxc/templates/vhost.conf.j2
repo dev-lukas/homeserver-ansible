@@ -1,0 +1,68 @@
+# {{ item.name }} - {{ item.subdomain }}.{{ reverse_proxy_domain }}
+# Managed by Ansible - do not edit manually
+
+# Upstream definition
+upstream {{ item.name }}_backend {
+    server {{ item.backend_host }}:{{ item.backend_port }};
+    keepalive 32;
+}
+
+# HTTP redirect to HTTPS
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ item.subdomain }}.{{ reverse_proxy_domain }};
+
+    # Apply geo-blocking
+    include /etc/nginx/snippets/geo-block.conf;
+
+    # ACME challenge location
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+
+    # Redirect all HTTP traffic to HTTPS
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# HTTPS server
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name {{ item.subdomain }}.{{ reverse_proxy_domain }};
+
+    # SSL certificates (wildcard)
+    include /etc/nginx/snippets/ssl-{{ reverse_proxy_domain | replace('.', '-') }}.conf;
+    include /etc/nginx/snippets/ssl-params.conf;
+
+    # Apply geo-blocking
+    include /etc/nginx/snippets/geo-block.conf;
+
+    # Logging
+    access_log /var/log/nginx/{{ item.name }}.access.log json_combined;
+    error_log /var/log/nginx/{{ item.name }}.error.log warn;
+
+{% if item.websocket | default(false) %}
+    # WebSocket support
+    location / {
+        include /etc/nginx/snippets/websocket-params.conf;
+        proxy_pass http://{{ item.name }}_backend;
+    }
+{% else %}
+    # Standard proxy
+    location / {
+        include /etc/nginx/snippets/proxy-params.conf;
+        proxy_pass http://{{ item.name }}_backend;
+    }
+{% endif %}
+
+    # Health check endpoint (optional)
+    location /nginx-health {
+        access_log off;
+        return 200 "OK\n";
+        add_header Content-Type text/plain;
+    }
+}

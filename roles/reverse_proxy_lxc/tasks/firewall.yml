@@ -1,0 +1,52 @@
+---
+# Configure Proxmox firewall for Reverse Proxy LXC container
+
+# Enable firewall at datacenter level using API
+- name: Enable datacenter firewall
+  ansible.builtin.command:
+    cmd: pvesh set /cluster/firewall/options --enable 1
+  changed_when: false
+
+# Configure container-specific firewall
+- name: Ensure firewall config directory exists
+  ansible.builtin.file:
+    path: /etc/pve/firewall
+    state: directory
+    mode: "0755"
+
+- name: Configure Reverse Proxy container firewall
+  ansible.builtin.shell:
+    cmd: |
+      cat > /etc/pve/firewall/{{ reverse_proxy_vmid }}.fw << FWEOF
+      [OPTIONS]
+      enable: 1
+      policy_in: DROP
+      policy_out: ACCEPT
+      log_level_in: nolog
+      log_level_out: nolog
+
+      [RULES]
+      # HTTP - Allow from anywhere (for Let's Encrypt and normal traffic)
+      IN ACCEPT -p tcp -dport {{ reverse_proxy_http_port }} -log nolog
+
+      # HTTPS - Allow from anywhere
+      IN ACCEPT -p tcp -dport {{ reverse_proxy_https_port }} -log nolog
+
+      # SSH - Restrict to internal subnet only
+      IN ACCEPT -p tcp -dport {{ reverse_proxy_ssh_port }} -source {{ reverse_proxy_internal_subnet }} -log nolog
+
+      # Allow ICMP (ping) from internal network
+      IN ACCEPT -p icmp -source {{ reverse_proxy_internal_subnet }}
+
+      # Allow established connections
+      IN ACCEPT -m conntrack --ctstate RELATED,ESTABLISHED
+
+      # Drop everything else (implicit due to policy_in: DROP)
+      FWEOF
+  notify: Reload pve-firewall
+
+- name: Enable firewall on container network interface
+  ansible.builtin.shell:
+    cmd: |
+      pct set {{ reverse_proxy_vmid }} --net0 name=eth0,bridge={{ reverse_proxy_bridge }},ip={{ reverse_proxy_ip }}/{{ reverse_proxy_netmask }},gw={{ reverse_proxy_gateway }},firewall=1
+  changed_when: false
