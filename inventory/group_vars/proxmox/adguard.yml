@@ -17,6 +17,11 @@ adguard_ip: "192.168.178.2"
 adguard_gateway: "192.168.178.1"
 adguard_netmask: "24"
 
+# IPv6 configuration
+adguard_ip6: "fd14:223c:aaf9::be24:11ff:febf:5e89"
+adguard_ip6_netmask: "64"
+adguard_gateway6: "fd14:223c:aaf9::1"
+
 # AdGuard Home ports
 adguard_dns_port: 53
 adguard_web_port: 3000

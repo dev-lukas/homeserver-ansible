@@ -15,35 +15,14 @@
   when: adguard_installed.rc != 0
   register: adguard_install
 
-- name: Create adguard system user
-  ansible.builtin.command:
-    cmd: "pct exec {{ adguard_vmid }} -- adduser -D -H -s /sbin/nologin -g 'AdGuard Home' adguard"
-  changed_when: false
-  failed_when: false
-
-- name: Set ownership of AdGuard Home directory
-  ansible.builtin.command:
-    cmd: "pct exec {{ adguard_vmid }} -- chown -R adguard:adguard /opt/AdGuardHome"
-  changed_when: false
-
 - name: Create work directory for AdGuard Home
   ansible.builtin.command:
     cmd: "pct exec {{ adguard_vmid }} -- mkdir -p /var/lib/adguardhome"
   changed_when: false
 
-- name: Set ownership of work directory
+- name: Install yq for config patching
   ansible.builtin.command:
-    cmd: "pct exec {{ adguard_vmid }} -- chown -R adguard:adguard /var/lib/adguardhome"
-  changed_when: false
-
-- name: Install libcap and yq
-  ansible.builtin.command:
-    cmd: "pct exec {{ adguard_vmid }} -- apk add --no-cache libcap yq"
-  changed_when: false
-
-- name: Allow AdGuard to bind to privileged ports
-  ansible.builtin.command:
-    cmd: "pct exec {{ adguard_vmid }} -- setcap 'cap_net_bind_service=+eip' /opt/AdGuardHome/AdGuardHome"
+    cmd: "pct exec {{ adguard_vmid }} -- apk add --no-cache yq"
   changed_when: false
 
 # Create minimal seed config for first run (skips setup wizard if user is set)
@@ -57,7 +36,7 @@
 - name: Create minimal seed config for first run
   ansible.builtin.command:
     cmd: |
-      pct exec {{ adguard_vmid }} -- sh -c 'cat > /opt/AdGuardHome/AdGuardHome.yaml << EOF
+      pct exec {{ adguard_vmid }} -- sh -c 'cat > /opt/AdGuardHome/AdGuardHome.yaml << "EOF"
       http:
         address: 0.0.0.0:{{ adguard_web_port }}
       dns:
@@ -66,17 +45,9 @@
         port: {{ adguard_dns_port }}
       users:
         - name: {{ adguard_admin_user }}
-          password: {{ adguard_admin_password_hash }}
-      os:
-        user: adguard
-        group: adguard
+          password: "{{ adguard_admin_password_hash }}"
       EOF'
   when: adguard_config_exists.rc != 0
-
-- name: Set ownership of config file
-  ansible.builtin.command:
-    cmd: "pct exec {{ adguard_vmid }} -- chown adguard:adguard /opt/AdGuardHome/AdGuardHome.yaml"
-  changed_when: false
 
 # Patch existing config with yq (idempotent, works with any schema version)
 - name: Patch AdGuard config - HTTP bind address
@@ -94,57 +65,139 @@
     cmd: "pct exec {{ adguard_vmid }} -- yq -i '.dns.port = {{ adguard_dns_port }}' /opt/AdGuardHome/AdGuardHome.yaml"
   changed_when: false
 
-- name: Patch AdGuard config - run as adguard user
+- name: Remove os.user/group from config to run as root
   ansible.builtin.command:
-    cmd: "pct exec {{ adguard_vmid }} -- yq -i '.os.user = \"adguard\" | .os.group = \"adguard\"' /opt/AdGuardHome/AdGuardHome.yaml"
-  changed_when: false
-
-- name: Create OpenRC init script for AdGuard Home
-  ansible.builtin.command:
-    cmd: |
-      pct exec {{ adguard_vmid }} -- sh -c 'cat > /etc/init.d/adguardhome << EOF
-      #!/sbin/openrc-run
-      
-      name="AdGuard Home"
-      description="Network-wide ads & trackers blocking DNS server"
-      command="/opt/AdGuardHome/AdGuardHome"
-      command_args="-s run -w /var/lib/adguardhome"
-      command_user="adguard:adguard"
-      command_background="yes"
-      pidfile="/run/\${RC_SVCNAME}.pid"
-      start_stop_daemon_args="--stdout /var/log/adguardhome.log --stderr /var/log/adguardhome.log"
-      
-      depend() {
-          need net
-          after firewall
-      }
-      EOF'
-  changed_when: false
-
-- name: Make AdGuard Home init script executable
-  ansible.builtin.command:
-    cmd: "pct exec {{ adguard_vmid }} -- chmod +x /etc/init.d/adguardhome"
+    cmd: "pct exec {{ adguard_vmid }} -- yq -i 'del(.os)' /opt/AdGuardHome/AdGuardHome.yaml"
   changed_when: false
 
 - name: Enable AdGuard Home service on boot
   ansible.builtin.command:
-    cmd: "pct exec {{ adguard_vmid }} -- rc-update add adguardhome default"
+    cmd: "pct exec {{ adguard_vmid }} -- rc-update add AdGuardHome default"
   changed_when: false
   failed_when: false
 
 - name: Restart AdGuard Home service to apply config
   ansible.builtin.command:
-    cmd: "pct exec {{ adguard_vmid }} -- rc-service adguardhome restart"
+    cmd: "pct exec {{ adguard_vmid }} -- rc-service AdGuardHome restart"
   changed_when: false
   failed_when: false
+
+- name: Wait for AdGuard Home to start
+  ansible.builtin.pause:
+    seconds: 5
+
+- name: Verify AdGuard Home is running
+  ansible.builtin.command:
+    cmd: "pct exec {{ adguard_vmid }} -- rc-service AdGuardHome status"
+  register: adguard_status
+  changed_when: false
+  failed_when: "'started' not in adguard_status.stdout"
+
+# Configure upstream DNS servers (Quad9 + Mullvad with parallel requests, ControlD as fallback)
+- name: Configure upstream DNS servers
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ adguard_vmid }} -- sh -c 'curl -s -u "{{ adguard_admin_user }}:{{ adguard_admin_password }}" \
+        -X POST "http://127.0.0.1:{{ adguard_web_port }}/control/dns_config" \
+        -H "Content-Type: application/json" \
+        -d "{
+          \"upstream_dns\": [
+            \"https://dns.quad9.net/dns-query\",
+            \"https://dns.mullvad.net/dns-query\",
+            \"tls://dns.quad9.net\",
+            \"tls://dns.mullvad.net\"
+          ],
+          \"fallback_dns\": [
+            \"https://freedns.controld.com/p0\",
+            \"tls://freedns.controld.com\"
+          ],
+          \"upstream_mode\": \"parallel\",
+          \"ratelimit\": 0,
+          \"blocking_mode\": \"default\",
+          \"edns_cs_enabled\": true,
+          \"dnssec_enabled\": true
+        }"'
+  changed_when: false
+
+# Add Hagezi blocklists from AdGuard's official filter options
+- name: Add Hagezi Pro blocklist
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ adguard_vmid }} -- sh -c 'curl -s -u "{{ adguard_admin_user }}:{{ adguard_admin_password }}" \
+        -X POST "http://127.0.0.1:{{ adguard_web_port }}/control/filtering/add_url" \
+        -H "Content-Type: application/json" \
+        -d "{
+          \"name\": \"HaGeZi Pro\",
+          \"url\": \"https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt\",
+          \"enabled\": true
+        }"'
+  changed_when: false
+  failed_when: false
+
+- name: Add Hagezi Xiaomi Tracker blocklist
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ adguard_vmid }} -- sh -c 'curl -s -u "{{ adguard_admin_user }}:{{ adguard_admin_password }}" \
+        -X POST "http://127.0.0.1:{{ adguard_web_port }}/control/filtering/add_url" \
+        -H "Content-Type: application/json" \
+        -d "{
+          \"name\": \"HaGeZi Xiaomi Tracker\",
+          \"url\": \"https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/native.xiaomi.txt\",
+          \"enabled\": true
+        }"'
+  changed_when: false
+  failed_when: false
+
+- name: Add Hagezi Windows Tracker blocklist
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ adguard_vmid }} -- sh -c 'curl -s -u "{{ adguard_admin_user }}:{{ adguard_admin_password }}" \
+        -X POST "http://127.0.0.1:{{ adguard_web_port }}/control/filtering/add_url" \
+        -H "Content-Type: application/json" \
+        -d "{
+          \"name\": \"HaGeZi Windows Tracker\",
+          \"url\": \"https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/native.winoffice.txt\",
+          \"enabled\": true
+        }"'
+  changed_when: false
+  failed_when: false
+
+- name: Add Hagezi Apple Tracker blocklist
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ adguard_vmid }} -- sh -c 'curl -s -u "{{ adguard_admin_user }}:{{ adguard_admin_password }}" \
+        -X POST "http://127.0.0.1:{{ adguard_web_port }}/control/filtering/add_url" \
+        -H "Content-Type: application/json" \
+        -d "{
+          \"name\": \"HaGeZi Apple Tracker\",
+          \"url\": \"https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/native.apple.txt\",
+          \"enabled\": true
+        }"'
+  changed_when: false
+  failed_when: false
+
+- name: Refresh blocklist filters
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ adguard_vmid }} -- sh -c 'curl -s -u "{{ adguard_admin_user }}:{{ adguard_admin_password }}" \
+        -X POST "http://127.0.0.1:{{ adguard_web_port }}/control/filtering/refresh" \
+        -H "Content-Type: application/json" \
+        -d "{\"whitelist\": false}"'
+  changed_when: false
 
 - name: Display AdGuard Home access info
   ansible.builtin.debug:
     msg: |
-      AdGuard Home installed successfully!
+      AdGuard Home installed and configured successfully!
       
       Access the web interface at: http://{{ adguard_ip }}:{{ adguard_web_port }}
       
       Login with: {{ adguard_admin_user }}
       
       Set your devices/router DNS to: {{ adguard_ip }}
+      
+      Configured:
+        - Upstream DNS: Quad9 + Mullvad (parallel mode)
+        - Fallback DNS: ControlD
+        - DNSSEC: Enabled
+        - Blocklists: HaGeZi Pro, Xiaomi, Windows, Apple Trackers

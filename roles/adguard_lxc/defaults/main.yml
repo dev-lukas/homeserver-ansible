@@ -33,3 +33,4 @@ adguard_configure_firewall: true
 # Generate hash with: htpasswd -nbB "" "yourpassword" | cut -d: -f2
 adguard_admin_user: "{{ vault_adguard_admin_user | default('admin') }}"
 adguard_admin_password_hash: "{{ vault_adguard_admin_password_hash }}"
+adguard_admin_password: "{{ vault_adguard_admin_password }}"
