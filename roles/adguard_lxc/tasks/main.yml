@@ -26,7 +26,8 @@
       --memory {{ adguard_memory }}
       --swap {{ adguard_swap }}
       --cores {{ adguard_cores }}
-      --net0 name=eth0,bridge={{ adguard_bridge }},ip={{ adguard_ip }}/{{ adguard_netmask }},gw={{ adguard_gateway }}
+      --net0 name=eth0,bridge={{ adguard_bridge }},ip={{ adguard_ip }}/{{ adguard_netmask }},gw={{ adguard_gateway }}{{ ',ip6=' + adguard_ip6 + '/' + adguard_ip6_netmask | string + ',gw6=' + adguard_gateway6 if adguard_ip6 is defined else '' }}
+      --nameserver {{ adguard_nameserver | default('9.9.9.9') }}
       --unprivileged {{ '1' if adguard_unprivileged else '0' }}
       --features nesting={{ '1' if adguard_nesting else '0' }}
       --onboot 1
