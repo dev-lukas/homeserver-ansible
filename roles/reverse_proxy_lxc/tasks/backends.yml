@@ -79,10 +79,8 @@
           location / {
               include /etc/nginx/snippets/{{ 'websocket' if item.websocket | default(false) else 'proxy' }}-params.conf;
               proxy_pass {{ item.backend_protocol | default('http') }}://{{ item.name }}_backend;
-{% if item.backend_protocol | default('http') == 'https' %}
-              proxy_ssl_verify off;
-              proxy_ssl_server_name on;
-{% endif %}
+              {{ 'proxy_ssl_verify off;' if item.backend_protocol | default('http') == 'https' else '' }}
+              {{ 'proxy_ssl_server_name on;' if item.backend_protocol | default('http') == 'https' else '' }}
           }
 
           # Health check endpoint
