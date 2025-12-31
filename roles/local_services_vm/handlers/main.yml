@@ -1,0 +1,28 @@
+---
+# Handlers for local_services_vm role
+
+- name: Restart Docker
+  ansible.builtin.systemd:
+    name: docker
+    state: restarted
+  delegate_to: "{{ local_services_hostname }}"
+
+- name: Reload UFW
+  ansible.builtin.command:
+    cmd: ufw reload
+  delegate_to: "{{ local_services_hostname }}"
+
+- name: Reload pve-firewall
+  ansible.builtin.command:
+    cmd: pve-firewall restart
+
+- name: Restart SSH
+  ansible.builtin.systemd:
+    name: ssh
+    state: restarted
+  delegate_to: "{{ local_services_hostname }}"
+
+- name: Apply sysctl settings
+  ansible.builtin.command:
+    cmd: sysctl -p /etc/sysctl.d/99-security.conf
+  delegate_to: "{{ local_services_hostname }}"

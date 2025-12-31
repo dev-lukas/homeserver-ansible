@@ -1,0 +1,197 @@
+---
+# Local Services VM role
+# Creates a Debian 12 VM with cloud-init, Docker, and various self-hosted services
+
+# Phase 1: Create VM on Proxmox host
+- name: Download Debian cloud image if not present
+  ansible.builtin.get_url:
+    url: "{{ local_services_cloud_image_url }}"
+    dest: "{{ local_services_cloud_image_path }}"
+    mode: "0644"
+  register: cloud_image_download
+
+- name: Check if VM exists
+  ansible.builtin.command:
+    cmd: "qm status {{ local_services_vmid }}"
+  register: vm_status
+  failed_when: false
+  changed_when: false
+
+- name: Create Local Services VM
+  ansible.builtin.command:
+    cmd: >
+      qm create {{ local_services_vmid }}
+      --name {{ local_services_hostname }}
+      --memory {{ local_services_memory }}
+      --cores {{ local_services_cores }}
+      --net0 virtio,bridge={{ local_services_bridge }}
+      --scsihw virtio-scsi-pci
+      --serial0 socket
+      --vga serial0
+      --agent enabled=1
+      --onboot 1
+  when: vm_status.rc != 0
+
+- name: Import cloud image as disk
+  ansible.builtin.command:
+    cmd: >
+      qm disk import {{ local_services_vmid }}
+      {{ local_services_cloud_image_path }}
+      {{ local_services_storage }}
+  register: disk_import
+  when: vm_status.rc != 0
+
+- name: Attach imported disk to VM
+  ansible.builtin.command:
+    cmd: >
+      qm set {{ local_services_vmid }}
+      --scsi0 {{ local_services_storage }}:vm-{{ local_services_vmid }}-disk-0
+      --boot order=scsi0
+  when: vm_status.rc != 0
+
+- name: Resize disk to target size
+  ansible.builtin.command:
+    cmd: "qm disk resize {{ local_services_vmid }} scsi0 {{ local_services_disk_size }}G"
+  when: vm_status.rc != 0
+
+- name: Configure cloud-init drive
+  ansible.builtin.command:
+    cmd: "qm set {{ local_services_vmid }} --ide2 {{ local_services_storage }}:cloudinit"
+  when: vm_status.rc != 0
+
+- name: Configure cloud-init network settings
+  ansible.builtin.command:
+    cmd: >
+      qm set {{ local_services_vmid }}
+      --ciuser root
+      --ipconfig0 ip={{ local_services_ip }}/{{ local_services_netmask }},gw={{ local_services_gateway }}
+      --nameserver {{ local_services_nameserver }}
+      --searchdomain local
+  when: vm_status.rc != 0
+
+- name: Write all SSH public keys to temp file for cloud-init
+  ansible.builtin.copy:
+    content: |
+      {{ vault_ansible_deploy_public_key }}
+      {% for key in ssh_authorized_keys %}{% if key is string %}{{ key }}
+      {% endif %}{% endfor %}
+    dest: /tmp/vm_ssh_keys.pub
+    mode: "0644"
+  when: vm_status.rc != 0
+
+- name: Configure cloud-init SSH keys
+  ansible.builtin.command:
+    cmd: "qm set {{ local_services_vmid }} --sshkeys /tmp/vm_ssh_keys.pub"
+  when: vm_status.rc != 0
+
+- name: Remove temp public key file
+  ansible.builtin.file:
+    path: /tmp/vm_ssh_keys.pub
+    state: absent
+  when: vm_status.rc != 0
+
+- name: Regenerate cloud-init image
+  ansible.builtin.command:
+    cmd: "qm cloudinit update {{ local_services_vmid }}"
+  when: vm_status.rc != 0
+
+- name: Start the VM
+  ansible.builtin.command:
+    cmd: "qm start {{ local_services_vmid }}"
+  register: start_result
+  failed_when: false
+  changed_when: start_result.rc == 0
+
+- name: Wait for VM to boot and get SSH ready
+  ansible.builtin.wait_for:
+    host: "{{ local_services_ip }}"
+    port: 22
+    delay: 10
+    timeout: 300
+  when: start_result.changed or vm_status.rc != 0
+
+- name: Wait additional time for cloud-init to complete
+  ansible.builtin.pause:
+    seconds: 30
+  when: vm_status.rc != 0
+
+# Phase 2: Configure VM via SSH using add_host
+# Direct SSH from localhost to VM using deploy key
+- name: Add VM to in-memory inventory
+  ansible.builtin.add_host:
+    name: "{{ local_services_hostname }}"
+    ansible_host: "{{ local_services_ip }}"
+    ansible_user: root
+    ansible_ssh_private_key_file: /tmp/.ansible_deploy_key
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    groups: local_services_vm_target
+
+# Phase 3: Configure the VM (delegate to new host)
+- name: Configure the Local Services VM
+  block:
+    - name: Wait for cloud-init to finish
+      ansible.builtin.shell:
+        cmd: "cloud-init status --wait || cloud-init status"
+      changed_when: false
+      register: cloud_init_status
+      until: "'status: done' in cloud_init_status.stdout or 'status: disabled' in cloud_init_status.stdout"
+      retries: 30
+      delay: 10
+      failed_when: "'status: error' in cloud_init_status.stdout"
+
+    - name: Update package cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages
+      ansible.builtin.apt:
+        upgrade: dist
+        autoremove: true
+
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - curl
+          - wget
+          - gnupg2
+          - ca-certificates
+          - lsb-release
+          - apt-transport-https
+          - sudo
+          - cron
+          - qemu-guest-agent
+        state: present
+
+    - name: Enable and start qemu-guest-agent
+      ansible.builtin.systemd:
+        name: qemu-guest-agent
+        state: started
+        enabled: true
+
+    - name: Apply security hardening
+      ansible.builtin.include_tasks: harden_vm.yml
+
+    - name: Install and configure UFW firewall
+      ansible.builtin.include_tasks: firewall.yml
+
+    - name: Install Docker Engine
+      ansible.builtin.include_tasks: docker.yml
+
+    - name: Configure unattended upgrades
+      ansible.builtin.include_tasks: unattended_upgrades.yml
+
+    - name: Deploy Docker Compose stacks
+      ansible.builtin.include_tasks: stacks.yml
+
+    # Note: Watchtower removed - project is archived
+    # Container updates will be handled via maintenance tasks
+
+    - name: Configure Docker image pruning
+      ansible.builtin.include_tasks: docker_prune.yml
+
+  delegate_to: "{{ local_services_hostname }}"
+
+# Phase 4: Configure Proxmox firewall (after VM is fully configured)
+- name: Configure Proxmox firewall for VM
+  ansible.builtin.include_tasks: proxmox_firewall.yml

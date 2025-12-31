@@ -5,6 +5,18 @@
   hosts: proxmox
   become: true
 
+  pre_tasks:
+    - name: Write deploy key to temp file
+      ansible.builtin.copy:
+        content: "{{ vault_ansible_deploy_private_key }}"
+        dest: /tmp/.ansible_deploy_key
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      no_log: true
+      tags: always
+
   roles:
     - role: proxmox_repos
       tags:
@@ -41,5 +53,12 @@
       tags:
         - reverse_proxy
         - nginx
+        - lxc
+        - containers
+
+    - role: local_services_vm
+      tags:
+        - local_services
+        - docker
         - lxc
         - containers

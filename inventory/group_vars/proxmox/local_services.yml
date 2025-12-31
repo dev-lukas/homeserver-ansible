@@ -1,0 +1,32 @@
+---
+# Local Services VM configuration
+
+# VM settings
+local_services_vmid: 104
+local_services_hostname: "local-services"
+local_services_storage: "vmpool"
+local_services_disk_size: "50"  # Size in GB
+local_services_memory: 4096
+local_services_cores: 4
+
+# Cloud image settings
+local_services_cloud_image_url: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2"
+local_services_cloud_image_path: "/var/lib/vz/template/iso/debian-13-generic-amd64.qcow2"
+
+# Network configuration
+local_services_bridge: "vmbr0"
+local_services_ip: "192.168.178.5"
+local_services_gateway: "192.168.178.1"
+local_services_netmask: "24"
+local_services_nameserver: "192.168.178.2"
+
+# Service ports
+local_services_bentopdf_port: 8080
+local_services_vert_port: 3000
+local_services_mealie_port: 9925
+
+# Mealie settings
+local_services_mealie_base_url: "https://recipes.lukas-roth.dev"
+
+# Docker prune schedule (cron format: minute hour day month weekday)
+local_services_docker_prune_schedule: "0 5 * * 0"  # 5 AM every Sunday

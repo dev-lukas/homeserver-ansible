@@ -1,0 +1,113 @@
+---
+# Deploy Docker Compose stacks for all services
+
+# BentoPDF - Privacy-first PDF toolkit (all processing in browser)
+- name: Create BentoPDF stack directory
+  ansible.builtin.file:
+    path: "{{ local_services_stacks_dir }}/bentopdf"
+    state: directory
+    mode: "0755"
+
+- name: Deploy BentoPDF docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ local_services_stacks_dir }}/bentopdf/docker-compose.yml"
+    content: |
+      services:
+        bentopdf:
+          image: ghcr.io/alam00000/bentopdf:latest
+          container_name: bentopdf
+          restart: unless-stopped
+          ports:
+            - "{{ local_services_bentopdf_port }}:8080"
+    mode: "0644"
+
+- name: Start BentoPDF stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ local_services_stacks_dir }}/bentopdf"
+  register: bentopdf_start
+  changed_when: "'Started' in bentopdf_start.stderr or 'Created' in bentopdf_start.stderr"
+
+# VERT File Converter
+- name: Create VERT stack directory
+  ansible.builtin.file:
+    path: "{{ local_services_stacks_dir }}/vert"
+    state: directory
+    mode: "0755"
+
+- name: Deploy VERT docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ local_services_stacks_dir }}/vert/docker-compose.yml"
+    content: |
+      version: "3.8"
+
+      services:
+        vert:
+          image: ghcr.io/vert-sh/vert:latest
+          container_name: vert
+          restart: unless-stopped
+          ports:
+            - "{{ local_services_vert_port }}:80"
+          environment:
+            - NODE_ENV=production
+    mode: "0644"
+
+- name: Start VERT stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ local_services_stacks_dir }}/vert"
+  register: vert_start
+  changed_when: "'Started' in vert_start.stderr or 'Created' in vert_start.stderr"
+
+# Mealie Recipes
+- name: Create Mealie stack directory
+  ansible.builtin.file:
+    path: "{{ local_services_stacks_dir }}/mealie/data"
+    state: directory
+    mode: "0755"
+
+- name: Deploy Mealie docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ local_services_stacks_dir }}/mealie/docker-compose.yml"
+    content: |
+      version: "3.8"
+
+      services:
+        mealie:
+          image: ghcr.io/mealie-recipes/mealie:latest
+          container_name: mealie
+          restart: unless-stopped
+          ports:
+            - "{{ local_services_mealie_port }}:9000"
+          volumes:
+            - ./data:/app/data
+          environment:
+            - ALLOW_SIGNUP=false
+            - PUID=1000
+            - PGID=1000
+            - TZ=Europe/Berlin
+            - MAX_WORKERS=1
+            - WEB_CONCURRENCY=1
+            - BASE_URL={{ local_services_mealie_base_url }}
+    mode: "0644"
+
+- name: Start Mealie stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ local_services_stacks_dir }}/mealie"
+  register: mealie_start
+  changed_when: "'Started' in mealie_start.stderr or 'Created' in mealie_start.stderr"
+
+- name: Wait for services to start
+  ansible.builtin.pause:
+    seconds: 15
+
+- name: Verify all containers are running
+  ansible.builtin.command:
+    cmd: docker ps --format 'table {{"{{"}}.Names{{"}}"}}\t{{"{{"}}.Status{{"}}"}}\t{{"{{"}}.Ports{{"}}"}}'
+  register: docker_ps
+  changed_when: false
+
+- name: Display running containers
+  ansible.builtin.debug:
+    msg: "{{ docker_ps.stdout_lines }}"

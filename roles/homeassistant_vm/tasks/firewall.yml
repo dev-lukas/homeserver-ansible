@@ -92,10 +92,6 @@
 
       # Allow all outbound (needed for cloud integrations, updates, etc.)
       OUT ACCEPT -log nolog
-
-      [IPSET]
-      # Define trusted networks if needed
-      # Can be used to restrict access to specific subnets
       FWEOF
   changed_when: true
 

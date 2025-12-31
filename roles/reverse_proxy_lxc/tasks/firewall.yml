@@ -38,9 +38,7 @@
       # Allow ICMP (ping) from internal network
       IN ACCEPT -p icmp -source {{ reverse_proxy_internal_subnet }}
 
-      # Allow established connections
-      IN ACCEPT -m conntrack --ctstate RELATED,ESTABLISHED
-
+      # Note: Proxmox firewall has built-in connection tracking
       # Drop everything else (implicit due to policy_in: DROP)
       FWEOF
   notify: Reload pve-firewall
