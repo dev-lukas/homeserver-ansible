@@ -1,0 +1,28 @@
+---
+# BentoPDF - Privacy-first PDF toolkit (all processing in browser)
+
+- name: Create BentoPDF stack directory
+  ansible.builtin.file:
+    path: "{{ local_services_stacks_dir }}/bentopdf"
+    state: directory
+    mode: "0755"
+
+- name: Deploy BentoPDF docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ local_services_stacks_dir }}/bentopdf/docker-compose.yml"
+    content: |
+      services:
+        bentopdf:
+          image: ghcr.io/alam00000/bentopdf:latest
+          container_name: bentopdf
+          restart: unless-stopped
+          ports:
+            - "{{ local_services_bentopdf_port }}:8080"
+    mode: "0644"
+
+- name: Start BentoPDF stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ local_services_stacks_dir }}/bentopdf"
+  register: bentopdf_start
+  changed_when: "'Started' in bentopdf_start.stderr or 'Created' in bentopdf_start.stderr"

@@ -24,6 +24,7 @@ local_services_nameserver: "192.168.178.2"
 local_services_bentopdf_port: 8080
 local_services_vert_port: 3000
 local_services_mealie_port: 9925
+local_services_homepage_port: 3001
 
 # Mealie settings
 local_services_mealie_base_url: "https://recipes.lukas-roth.dev"

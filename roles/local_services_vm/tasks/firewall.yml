@@ -44,6 +44,13 @@
     proto: tcp
     comment: "Mealie Recipes"
 
+- name: Allow Homepage port through UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ local_services_homepage_port }}"
+    proto: tcp
+    comment: "Homepage Dashboard"
+
 - name: Enable UFW
   community.general.ufw:
     state: enabled

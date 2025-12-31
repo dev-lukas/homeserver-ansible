@@ -1,0 +1,106 @@
+---
+# Homepage - Modern self-hosted dashboard
+
+- name: Create Homepage stack directories
+  ansible.builtin.file:
+    path: "{{ local_services_stacks_dir }}/homepage/config"
+    state: directory
+    mode: "0755"
+
+- name: Deploy Homepage docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ local_services_stacks_dir }}/homepage/docker-compose.yml"
+    content: |
+      services:
+        homepage:
+          image: ghcr.io/gethomepage/homepage:latest
+          container_name: homepage
+          restart: unless-stopped
+          ports:
+            - "{{ local_services_homepage_port }}:3000"
+          volumes:
+            - ./config:/app/config
+          environment:
+            - TZ=Europe/Berlin
+            - HOMEPAGE_ALLOWED_HOSTS=home.{{ reverse_proxy_domain }}
+    mode: "0644"
+
+- name: Deploy Homepage settings.yaml
+  ansible.builtin.copy:
+    dest: "{{ local_services_stacks_dir }}/homepage/config/settings.yaml"
+    content: |
+      title: Homeserver
+      favicon: https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/homepage.png
+      theme: dark
+      color: slate
+      headerStyle: clean
+      layout:
+        - Local Services:
+            style: row
+            columns: 3
+        - Infrastructure:
+            style: row
+            columns: 3
+    mode: "0644"
+
+- name: Deploy Homepage services.yaml
+  ansible.builtin.copy:
+    dest: "{{ local_services_stacks_dir }}/homepage/config/services.yaml"
+    content: |
+      - Local Services:
+          - BentoPDF:
+              icon: mdi-file-pdf-box
+              href: https://pdf.{{ reverse_proxy_domain }}
+              description: Privacy-first PDF toolkit
+          - VERT:
+              icon: mdi-file-swap
+              href: https://vert.{{ reverse_proxy_domain }}
+              description: File converter
+          - Mealie:
+              icon: mdi-silverware-fork-knife
+              href: https://recipes.{{ reverse_proxy_domain }}
+              description: Recipe manager
+
+      - Infrastructure:
+          - Home Assistant:
+              icon: mdi-home-assistant
+              href: https://ha.{{ reverse_proxy_domain }}
+              description: Home automation
+          - AdGuard Home:
+              icon: mdi-shield-check
+              href: https://adguard.{{ reverse_proxy_domain }}
+              description: DNS & ad blocking
+          - Proxmox:
+              icon: mdi-server
+              href: https://proxmox.{{ reverse_proxy_domain }}
+              description: Virtualization platform
+    mode: "0644"
+
+- name: Deploy Homepage bookmarks.yaml
+  ansible.builtin.copy:
+    dest: "{{ local_services_stacks_dir }}/homepage/config/bookmarks.yaml"
+    content: |
+      # Add custom bookmarks here
+      # - Developer:
+      #     - GitHub:
+      #         - icon: mdi-github
+      #           href: https://github.com
+    mode: "0644"
+
+- name: Deploy Homepage widgets.yaml
+  ansible.builtin.copy:
+    dest: "{{ local_services_stacks_dir }}/homepage/config/widgets.yaml"
+    content: |
+      - datetime:
+          text_size: xl
+          format:
+            dateStyle: long
+            timeStyle: short
+    mode: "0644"
+
+- name: Start Homepage stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ local_services_stacks_dir }}/homepage"
+  register: homepage_start
+  changed_when: "'Started' in homepage_start.stderr or 'Created' in homepage_start.stderr"

@@ -36,6 +36,9 @@
       # Mealie Recipes
       IN ACCEPT -p tcp -dport {{ local_services_mealie_port }} -log nolog
 
+      # Homepage Dashboard
+      IN ACCEPT -p tcp -dport {{ local_services_homepage_port }} -log nolog
+
       # Allow ICMP (ping)
       IN ACCEPT -p icmp -log nolog
       FWEOF

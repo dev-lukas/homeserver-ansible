@@ -1,0 +1,32 @@
+---
+# VERT File Converter
+
+- name: Create VERT stack directory
+  ansible.builtin.file:
+    path: "{{ local_services_stacks_dir }}/vert"
+    state: directory
+    mode: "0755"
+
+- name: Deploy VERT docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ local_services_stacks_dir }}/vert/docker-compose.yml"
+    content: |
+      version: "3.8"
+
+      services:
+        vert:
+          image: ghcr.io/vert-sh/vert:latest
+          container_name: vert
+          restart: unless-stopped
+          ports:
+            - "{{ local_services_vert_port }}:80"
+          environment:
+            - NODE_ENV=production
+    mode: "0644"
+
+- name: Start VERT stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ local_services_stacks_dir }}/vert"
+  register: vert_start
+  changed_when: "'Started' in vert_start.stderr or 'Created' in vert_start.stderr"
