@@ -1,0 +1,56 @@
+---
+# Configure Docker image pruning to prevent disk space issues
+
+- name: Create Docker prune script
+  ansible.builtin.copy:
+    dest: /usr/local/bin/docker-prune.sh
+    content: |
+      #!/bin/bash
+      # Docker cleanup script - removes unused images, containers, networks, and volumes
+      
+      echo "$(date): Starting Docker cleanup..."
+      
+      # Remove stopped containers older than 24 hours
+      docker container prune -f --filter "until=24h"
+      
+      # Remove unused images (not just dangling ones)
+      docker image prune -a -f --filter "until=168h"  # 7 days
+      
+      # Remove unused volumes
+      docker volume prune -f
+      
+      # Remove unused networks
+      docker network prune -f
+      
+      # Remove build cache
+      docker builder prune -f --filter "until=168h"
+      
+      echo "$(date): Docker cleanup completed."
+      
+      # Log disk usage after cleanup
+      df -h /var/lib/docker
+    mode: "0755"
+
+- name: Create cron job for Docker pruning
+  ansible.builtin.cron:
+    name: "Docker image cleanup"
+    minute: "0"
+    hour: "5"
+    weekday: "0"
+    job: "/usr/local/bin/docker-prune.sh >> /var/log/docker-prune.log 2>&1"
+    user: root
+
+- name: Create logrotate config for Docker prune logs
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/docker-prune
+    content: |
+      /var/log/docker-prune.log {
+          weekly
+          rotate 4
+          compress
+          delaycompress
+          missingok
+          notifempty
+          create 0640 root root
+      }
+    mode: "0644"

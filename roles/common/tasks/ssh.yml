@@ -15,3 +15,67 @@
     state: present
   loop: "{{ ssh_authorized_keys }}"
   when: ssh_authorized_keys is defined and ssh_authorized_keys | length > 0
+
+# Verify key-based authentication works before disabling password auth
+- name: Test SSH key authentication works
+  ansible.builtin.command:
+    cmd: >-
+      ssh -i /tmp/.ansible_deploy_key
+      -o StrictHostKeyChecking=no
+      -o UserKnownHostsFile=/dev/null
+      -o PasswordAuthentication=no
+      -o BatchMode=yes
+      -o ConnectTimeout=10
+      {{ ansible_user }}@{{ ansible_host }}
+      echo "key_auth_ok"
+  delegate_to: localhost
+  become: false
+  register: ssh_key_test
+  changed_when: false
+  failed_when: false
+
+- name: Set fact for SSH key auth status
+  ansible.builtin.set_fact:
+    ssh_key_auth_verified: "{{ ssh_key_test.rc == 0 and 'key_auth_ok' in ssh_key_test.stdout }}"
+
+- name: Display SSH key auth status
+  ansible.builtin.debug:
+    msg: "SSH key authentication {{ 'verified successfully' if ssh_key_auth_verified else 'NOT verified - skipping SSH hardening' }}"
+
+# SSH hardening - only runs if key auth is verified
+- name: Disable SSH password authentication
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PasswordAuthentication'
+    line: 'PasswordAuthentication no'
+    state: present
+    backup: true
+  notify: Restart sshd
+  when: ssh_key_auth_verified | bool
+
+- name: Disable SSH challenge-response authentication
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?KbdInteractiveAuthentication'
+    line: 'KbdInteractiveAuthentication no'
+    state: present
+  notify: Restart sshd
+  when: ssh_key_auth_verified | bool
+
+- name: Ensure PubkeyAuthentication is enabled
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PubkeyAuthentication'
+    line: 'PubkeyAuthentication yes'
+    state: present
+  notify: Restart sshd
+  when: ssh_key_auth_verified | bool
+
+- name: Set PermitRootLogin to prohibit-password
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitRootLogin'
+    line: 'PermitRootLogin prohibit-password'
+    state: present
+  notify: Restart sshd
+  when: ssh_key_auth_verified | bool

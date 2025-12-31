@@ -1,0 +1,56 @@
+---
+# Configure Proxmox firewall for Local Services VM
+
+# Enable firewall at datacenter level using API
+- name: Enable datacenter firewall
+  ansible.builtin.command:
+    cmd: pvesh set /cluster/firewall/options --enable 1
+  changed_when: false
+
+# Configure VM-specific firewall
+- name: Ensure firewall config directory exists
+  ansible.builtin.file:
+    path: /etc/pve/firewall
+    state: directory
+    mode: "0755"
+
+- name: Configure Local Services VM firewall
+  ansible.builtin.shell:
+    cmd: |
+      cat > /etc/pve/firewall/{{ local_services_vmid }}.fw << FWEOF
+      [OPTIONS]
+      enable: 1
+      policy_in: DROP
+      policy_out: ACCEPT
+
+      [RULES]
+      # SSH access to VM
+      IN ACCEPT -p tcp -dport {{ local_services_ssh_port }} -log nolog
+
+      # BentoPDF
+      IN ACCEPT -p tcp -dport {{ local_services_bentopdf_port }} -log nolog
+
+      # VERT File Converter
+      IN ACCEPT -p tcp -dport {{ local_services_vert_port }} -log nolog
+
+      # Mealie Recipes
+      IN ACCEPT -p tcp -dport {{ local_services_mealie_port }} -log nolog
+
+      # Allow ICMP (ping)
+      IN ACCEPT -p icmp -log nolog
+      FWEOF
+  notify: Reload pve-firewall
+
+# Get current net0 config and only add/update firewall flag
+- name: Get current net0 MAC address
+  ansible.builtin.shell:
+    cmd: "qm config {{ local_services_vmid }} | grep '^net0:' | grep -oP 'virtio=\\K[0-9A-Fa-f:]+'"
+  register: mac_result
+  changed_when: false
+  failed_when: false
+
+- name: Enable firewall on VM network interface (preserving MAC)
+  ansible.builtin.command:
+    cmd: "qm set {{ local_services_vmid }} --net0 virtio={{ mac_result.stdout }},bridge={{ local_services_bridge }},firewall=1"
+  when: mac_result.stdout != ''
+  changed_when: false

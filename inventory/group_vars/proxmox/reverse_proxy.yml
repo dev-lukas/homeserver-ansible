@@ -54,3 +54,21 @@ reverse_proxy_backends:
     backend_protocol: "https"  # Proxmox uses HTTPS
     websocket: true  # For noVNC console
     internal_only: true
+  - name: "bentopdf"
+    subdomain: "pdf"
+    backend_host: "192.168.178.5"
+    backend_port: 8080
+    websocket: false
+    internal_only: true
+  - name: "vert"
+    subdomain: "vert"
+    backend_host: "192.168.178.5"
+    backend_port: 3000
+    websocket: false
+    internal_only: true
+  - name: "mealie"
+    subdomain: "recipes"
+    backend_host: "192.168.178.5"
+    backend_port: 9925
+    websocket: false
+    internal_only: true
