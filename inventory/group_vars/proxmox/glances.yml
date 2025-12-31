@@ -1,0 +1,5 @@
+---
+# Glances configuration
+
+# Port for Glances web server
+glances_port: 61208

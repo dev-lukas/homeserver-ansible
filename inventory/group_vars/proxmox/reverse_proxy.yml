@@ -78,3 +78,9 @@ reverse_proxy_backends:
     backend_port: 3001
     websocket: false
     internal_only: true
+  - name: "glances"
+    subdomain: "glances"
+    backend_host: "192.168.178.56"
+    backend_port: 61208
+    websocket: true
+    internal_only: true
