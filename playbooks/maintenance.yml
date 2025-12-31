@@ -153,6 +153,12 @@
       register: mealie_update
       changed_when: "'Pulled' in mealie_update.stdout or 'Started' in mealie_update.stderr"
 
+    - name: Update Docker images - Homepage
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} 'cd {{ stacks_dir }}/homepage && docker compose pull && docker compose up -d'"
+      register: homepage_update
+      changed_when: "'Pulled' in homepage_update.stdout or 'Started' in homepage_update.stderr"
+
     - name: Prune unused Docker images
       ansible.builtin.shell:
         cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} docker image prune -f"
@@ -166,6 +172,7 @@
           BentoPDF: {{ 'Updated' if bentopdf_update.changed else 'No changes' }}
           Vert: {{ 'Updated' if vert_update.changed else 'No changes' }}
           Mealie: {{ 'Updated' if mealie_update.changed else 'No changes' }}
+          Homepage: {{ 'Updated' if homepage_update.changed else 'No changes' }}
           Pruned: {{ prune_result.stdout_lines[-1] | default('Done') }}
 
   post_tasks:

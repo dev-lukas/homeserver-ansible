@@ -36,6 +36,7 @@ local_services_docker_prune_schedule: "0 5 * * 0"  # 5 AM every Sunday
 local_services_bentopdf_port: 8080
 local_services_vert_port: 3000
 local_services_mealie_port: 9925
+local_services_homepage_port: 3001
 
 # Mealie settings
 local_services_mealie_base_url: "https://recipes.lukas-roth.dev"

@@ -72,3 +72,9 @@ reverse_proxy_backends:
     backend_port: 9925
     websocket: false
     internal_only: true
+  - name: "homepage"
+    subdomain: "home"
+    backend_host: "192.168.178.5"
+    backend_port: 3001
+    websocket: false
+    internal_only: true
