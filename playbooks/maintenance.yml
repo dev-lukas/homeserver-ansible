@@ -1,0 +1,176 @@
+---
+# Maintenance playbook - Updates all infrastructure components
+# Usage: ansible-playbook playbooks/maintenance.yml --ask-vault-pass
+# Or target specific hosts: ansible-playbook playbooks/maintenance.yml --ask-vault-pass --limit proxmox-root
+
+- name: Maintenance - Proxmox Host
+  hosts: proxmox-root
+  gather_facts: false
+  tags: [proxmox, maintenance]
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Upgrade packages (no dist-upgrade)
+      ansible.builtin.apt:
+        upgrade: safe
+      register: apt_upgrade
+
+    - name: Remove unused packages
+      ansible.builtin.apt:
+        autoremove: true
+        autoclean: true
+
+    - name: Check if reboot is required
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: Display update summary
+      ansible.builtin.debug:
+        msg: |
+          Proxmox host updated.
+          Packages upgraded: {{ apt_upgrade.changed }}
+          Reboot required: {{ reboot_required.stat.exists | default(false) }}
+
+- name: Maintenance - AdGuard LXC
+  hosts: proxmox-root
+  gather_facts: false
+  tags: [adguard, maintenance]
+  vars:
+    adguard_vmid: "{{ hostvars['proxmox-root']['adguard_vmid'] | default(102) }}"
+  tasks:
+    - name: Update Alpine packages
+      ansible.builtin.command:
+        cmd: "pct exec {{ adguard_vmid }} -- apk update"
+      changed_when: false
+
+    - name: Upgrade Alpine packages
+      ansible.builtin.command:
+        cmd: "pct exec {{ adguard_vmid }} -- apk upgrade --no-cache"
+      register: apk_upgrade
+      changed_when: "'Installing' in apk_upgrade.stdout or 'Upgrading' in apk_upgrade.stdout"
+
+    - name: Update AdGuard Home binary
+      ansible.builtin.command:
+        cmd: "pct exec {{ adguard_vmid }} -- /opt/AdGuardHome/AdGuardHome --update"
+      register: adguard_update
+      changed_when: "'updated' in adguard_update.stdout.lower()"
+      failed_when: false
+
+    - name: Display AdGuard update result
+      ansible.builtin.debug:
+        msg: "{{ adguard_update.stdout | default('AdGuard update completed') }}"
+
+- name: Maintenance - Reverse Proxy LXC
+  hosts: proxmox-root
+  gather_facts: false
+  tags: [reverse_proxy, maintenance]
+  vars:
+    reverse_proxy_vmid: "{{ hostvars['proxmox-root']['reverse_proxy_vmid'] | default(103) }}"
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.command:
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get update"
+      changed_when: false
+
+    - name: Upgrade packages
+      ansible.builtin.command:
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get upgrade -y"
+      register: apt_upgrade
+      changed_when: "'0 upgraded' not in apt_upgrade.stdout"
+
+    - name: Autoremove unused packages
+      ansible.builtin.command:
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get autoremove -y"
+      changed_when: false
+
+    - name: Check if nginx needs reload
+      ansible.builtin.command:
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- nginx -t"
+      register: nginx_test
+      changed_when: false
+      failed_when: false
+
+    - name: Reload nginx if config is valid
+      ansible.builtin.command:
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl reload nginx"
+      when: nginx_test.rc == 0
+      changed_when: false
+
+- name: Maintenance - Local Services VM
+  hosts: proxmox-root
+  gather_facts: false
+  tags: [local_services, maintenance]
+  vars:
+    local_services_ip: "{{ hostvars['proxmox-root']['local_services_ip'] | default('192.168.178.5') }}"
+    stacks_dir: "/opt/stacks"
+    ssh_key_path: "/tmp/.ansible_deploy_key"
+    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ssh_key_path }}"
+
+  pre_tasks:
+    - name: Write deploy key to temp file on Proxmox
+      ansible.builtin.copy:
+        content: "{{ vault_ansible_deploy_private_key }}"
+        dest: "{{ ssh_key_path }}"
+        mode: "0600"
+      no_log: true
+
+  tasks:
+    - name: Update apt cache on VM
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} apt-get update"
+      changed_when: false
+
+    - name: Upgrade packages on VM
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} 'DEBIAN_FRONTEND=noninteractive apt-get upgrade -y'"
+      register: apt_upgrade
+      changed_when: "'0 upgraded' not in apt_upgrade.stdout"
+
+    - name: Autoremove unused packages
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} apt-get autoremove -y"
+      changed_when: false
+
+    - name: Update Docker images - BentoPDF
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} 'cd {{ stacks_dir }}/bentopdf && docker compose pull && docker compose up -d'"
+      register: bentopdf_update
+      changed_when: "'Pulled' in bentopdf_update.stdout or 'Started' in bentopdf_update.stderr"
+
+    - name: Update Docker images - Vert
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} 'cd {{ stacks_dir }}/vert && docker compose pull && docker compose up -d'"
+      register: vert_update
+      changed_when: "'Pulled' in vert_update.stdout or 'Started' in vert_update.stderr"
+
+    - name: Update Docker images - Mealie
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} 'cd {{ stacks_dir }}/mealie && docker compose pull && docker compose up -d'"
+      register: mealie_update
+      changed_when: "'Pulled' in mealie_update.stdout or 'Started' in mealie_update.stderr"
+
+    - name: Prune unused Docker images
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} docker image prune -f"
+      register: prune_result
+      changed_when: "'Total reclaimed space' in prune_result.stdout and 'Total reclaimed space: 0B' not in prune_result.stdout"
+
+    - name: Display Docker update summary
+      ansible.builtin.debug:
+        msg: |
+          Local Services VM updated.
+          BentoPDF: {{ 'Updated' if bentopdf_update.changed else 'No changes' }}
+          Vert: {{ 'Updated' if vert_update.changed else 'No changes' }}
+          Mealie: {{ 'Updated' if mealie_update.changed else 'No changes' }}
+          Pruned: {{ prune_result.stdout_lines[-1] | default('Done') }}
+
+  post_tasks:
+    - name: Remove deploy key from Proxmox
+      ansible.builtin.file:
+        path: "{{ ssh_key_path }}"
+        state: absent
+
