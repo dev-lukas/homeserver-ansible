@@ -1,0 +1,97 @@
+---
+# Install and configure Glances in a Python venv
+
+- name: Install Python venv, pip, and lm-sensors
+  ansible.builtin.apt:
+    name:
+      - python3-venv
+      - python3-pip
+      - lm-sensors
+    state: present
+    update_cache: true
+
+- name: Detect hardware sensors (non-interactive)
+  ansible.builtin.command:
+    cmd: sensors-detect --auto
+  register: sensors_detect
+  changed_when: "'driver' in sensors_detect.stdout"
+  failed_when: false
+
+- name: Create Glances venv directory
+  ansible.builtin.file:
+    path: "{{ glances_venv_path }}"
+    state: directory
+    mode: "0755"
+
+- name: Create Python venv for Glances
+  ansible.builtin.command:
+    cmd: python3 -m venv {{ glances_venv_path }}
+    creates: "{{ glances_venv_path }}/bin/activate"
+
+- name: Install Glances in venv
+  ansible.builtin.pip:
+    name:
+      - glances[web]
+    virtualenv: "{{ glances_venv_path }}"
+    state: present
+
+- name: Create Glances systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/glances.service
+    content: |
+      [Unit]
+      Description=Glances system monitoring
+      After=network.target
+
+      [Service]
+      Type=simple
+      ExecStart={{ glances_venv_path }}/bin/glances -w -B 0.0.0.0 -p {{ glances_port }}
+      Restart=on-failure
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: "0644"
+  notify: Restart glances
+
+- name: Enable and start Glances service
+  ansible.builtin.systemd:
+    name: glances
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for Glances to start
+  ansible.builtin.pause:
+    seconds: 3
+
+- name: Verify Glances is running
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ glances_port }}/api/4/status"
+    method: GET
+    status_code: [200]
+  register: glances_check
+  retries: 3
+  delay: 5
+  until: glances_check.status == 200
+
+# Configure Proxmox host firewall to allow Glances access from internal network
+- name: Configure Proxmox cluster firewall for Glances
+  ansible.builtin.copy:
+    dest: /etc/pve/firewall/cluster.fw
+    content: |
+      [OPTIONS]
+      policy_in: DROP
+      enable: 1
+
+      [RULES]
+      IN ACCEPT -source 192.168.178.0/24 -p tcp -dport {{ glances_port }} -log nolog
+    mode: "0640"
+    force: true
+  register: firewall_changed
+
+- name: Reload pve-firewall if changed
+  ansible.builtin.command:
+    cmd: pve-firewall restart
+  when: firewall_changed.changed
+  changed_when: true

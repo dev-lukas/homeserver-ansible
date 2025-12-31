@@ -35,6 +35,9 @@
       color: slate
       headerStyle: clean
       layout:
+        - Proxmox Monitoring:
+            style: row
+            columns: 4
         - Local Services:
             style: row
             columns: 3
@@ -47,6 +50,32 @@
   ansible.builtin.copy:
     dest: "{{ local_services_stacks_dir }}/homepage/config/services.yaml"
     content: |
+      - Proxmox Monitoring:
+          - CPU:
+              widget:
+                type: glances
+                url: http://192.168.178.56:{{ glances_port }}
+                version: 4
+                metric: cpu
+          - Memory:
+              widget:
+                type: glances
+                url: http://192.168.178.56:{{ glances_port }}
+                version: 4
+                metric: memory
+          - Disk I/O:
+              widget:
+                type: glances
+                url: http://192.168.178.56:{{ glances_port }}
+                version: 4
+                metric: disk:sda
+          - CPU Temperature:
+              widget:
+                type: glances
+                url: http://192.168.178.56:{{ glances_port }}
+                version: 4
+                metric: sensor:Package id 0
+
       - Local Services:
           - BentoPDF:
               icon: mdi-file-pdf-box
@@ -96,6 +125,11 @@
           format:
             dateStyle: long
             timeStyle: short
+      - glances:
+          url: http://192.168.178.56:{{ glances_port }}
+          version: 4
+          metric: info
+          chart: false
     mode: "0644"
 
 - name: Start Homepage stack
