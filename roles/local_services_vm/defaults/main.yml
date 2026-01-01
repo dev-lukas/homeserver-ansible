@@ -44,3 +44,15 @@ local_services_mealie_base_url: "https://recipes.lukas-roth.dev"
 # UFW settings
 local_services_ufw_default_incoming: "deny"
 local_services_ufw_default_outgoing: "allow"
+
+# Homepage configuration
+homepage_proxmox_ip: "192.168.178.56"
+homepage_storage_mounts:
+  - name: "Root"
+    mount: "/"
+  - name: "VM Pool"
+    mount: "/vmpool"
+
+# Background image URL (will be downloaded locally)
+# Set to empty string to disable
+homepage_background_url: "https://images.pexels.com/photos/1108701/pexels-photo-1108701.jpeg"
