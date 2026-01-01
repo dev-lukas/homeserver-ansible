@@ -18,25 +18,38 @@
       tags: always
 
   roles:
-    - role: proxmox_repos
+    # Proxmox host roles
+    - role: proxmox_root/proxmox_repos
       tags:
         - repos
         - apt
 
-    - role: common
+    - role: proxmox_root/common
       tags:
         - common
         - always
 
-    - role: power_management
+    - role: proxmox_root/power_management
       tags:
         - power
 
-    - role: ups
+    - role: proxmox_root/ups
       tags:
         - ups
         - nut
 
+    - role: proxmox_root/glances
+      tags:
+        - glances
+        - monitoring
+
+    - role: proxmox_root/rasdaemon
+      tags:
+        - rasdaemon
+        - ecc
+        - monitoring
+
+    # LXC/VM roles
     - role: adguard_lxc
       tags:
         - adguard
@@ -62,8 +75,3 @@
         - docker
         - lxc
         - containers
-
-    - role: glances
-      tags:
-        - glances
-        - monitoring

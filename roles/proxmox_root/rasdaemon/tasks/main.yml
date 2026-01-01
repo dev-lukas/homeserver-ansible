@@ -1,0 +1,25 @@
+---
+# Rasdaemon - ECC memory error monitoring
+
+- name: Install rasdaemon
+  ansible.builtin.apt:
+    name: rasdaemon
+    state: present
+    update_cache: true
+
+- name: Enable and start rasdaemon service
+  ansible.builtin.systemd:
+    name: rasdaemon
+    enabled: true
+    state: started
+
+- name: Check EDAC driver status
+  ansible.builtin.command:
+    cmd: ras-mc-ctl --status
+  register: ras_status
+  changed_when: false
+  failed_when: false
+
+- name: Display EDAC/rasdaemon status
+  ansible.builtin.debug:
+    msg: "{{ ras_status.stdout_lines }}"
