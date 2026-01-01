@@ -7,11 +7,57 @@
     state: present
     update_cache: true
 
+- name: Ensure rasdaemon runs with --record flag
+  ansible.builtin.lineinfile:
+    path: /etc/default/rasdaemon
+    regexp: "^RASDAEMON_ARGS="
+    line: 'RASDAEMON_ARGS="--record"'
+    create: true
+    mode: "0644"
+  notify: Restart rasdaemon
+
+- name: Ensure DIMM labels directory exists
+  ansible.builtin.file:
+    path: /etc/ras/dimm_labels.d
+    state: directory
+    mode: "0755"
+
+- name: Deploy DIMM labels for Asus Pro WS W680-ACE
+  ansible.builtin.copy:
+    dest: /etc/ras/dimm_labels.d/asus_w680_ace
+    content: |
+      Vendor: ASUSTeK COMPUTER INC.
+      Model: Pro WS W680-ACE
+         DIMM_A1: 0.0.0, 0.1.0
+         DIMM_A2: 0.0.1, 0.1.1
+         DIMM_B1: 1.0.0, 1.1.0
+         DIMM_B2: 1.0.1, 1.1.1
+    mode: "0644"
+  register: dimm_labels
+
 - name: Enable and start rasdaemon service
   ansible.builtin.systemd:
     name: rasdaemon
     enabled: true
     state: started
+    daemon_reload: true
+
+- name: Wait for rasdaemon to initialize database
+  ansible.builtin.pause:
+    seconds: 3
+
+- name: Register DIMM labels
+  ansible.builtin.command:
+    cmd: ras-mc-ctl --register-labels
+  when: dimm_labels.changed
+  changed_when: true
+
+- name: Enable and start ras-mc-ctl service
+  ansible.builtin.systemd:
+    name: ras-mc-ctl
+    enabled: true
+    state: started
+  failed_when: false
 
 - name: Check EDAC driver status
   ansible.builtin.command:
