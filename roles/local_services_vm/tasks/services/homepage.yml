@@ -20,6 +20,12 @@
     mode: "0644"
   when: homepage_background_url | length > 0
 
+- name: Create Homepage API directory
+  ansible.builtin.file:
+    path: "{{ local_services_stacks_dir }}/homepage/api"
+    state: directory
+    mode: "0755"
+
 - name: Deploy Homepage docker-compose.yml
   ansible.builtin.copy:
     dest: "{{ local_services_stacks_dir }}/homepage/docker-compose.yml"
@@ -34,6 +40,7 @@
           volumes:
             - ./config:/app/config
             - ./images:/app/public/images
+            - ./api:/app/public/api
           environment:
             - TZ=Europe/Berlin
             - HOMEPAGE_ALLOWED_HOSTS=home.{{ reverse_proxy_domain }}
@@ -57,7 +64,7 @@
       layout:
         - System Metrics:
             style: row
-            columns: 4
+            columns: 5
         - Storage:
             style: row
             columns: {{ homepage_storage_mounts | length }}
@@ -98,6 +105,18 @@
                 url: http://{{ homepage_proxmox_ip }}:{{ glances_port }}
                 version: 4
                 metric: sensor:Package id 0
+          - ECC Memory:
+              widget:
+                type: customapi
+                url: http://localhost:3000/api/ecc.json
+                refreshInterval: 60000
+                mappings:
+                  - field: ce
+                    label: Corrected
+                    format: number
+                  - field: ue
+                    label: Uncorrectable
+                    format: number
 
       - Storage:
       {% for storage in homepage_storage_mounts %}
