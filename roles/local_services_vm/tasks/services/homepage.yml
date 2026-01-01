@@ -7,6 +7,19 @@
     state: directory
     mode: "0755"
 
+- name: Create Homepage images directory
+  ansible.builtin.file:
+    path: "{{ local_services_stacks_dir }}/homepage/images"
+    state: directory
+    mode: "0755"
+
+- name: Download background image
+  ansible.builtin.get_url:
+    url: "{{ homepage_background_url }}"
+    dest: "{{ local_services_stacks_dir }}/homepage/images/background.jpg"
+    mode: "0644"
+  when: homepage_background_url | length > 0
+
 - name: Deploy Homepage docker-compose.yml
   ansible.builtin.copy:
     dest: "{{ local_services_stacks_dir }}/homepage/docker-compose.yml"
@@ -20,6 +33,7 @@
             - "{{ local_services_homepage_port }}:3000"
           volumes:
             - ./config:/app/config
+            - ./images:/app/public/images
           environment:
             - TZ=Europe/Berlin
             - HOMEPAGE_ALLOWED_HOSTS=home.{{ reverse_proxy_domain }}
@@ -34,10 +48,19 @@
       theme: dark
       color: slate
       headerStyle: clean
+      {% if homepage_background_url | length > 0 %}
+      background:
+        image: /images/background.jpg
+        blur: sm
+        opacity: 30
+      {% endif %}
       layout:
-        - Proxmox Monitoring:
+        - System Metrics:
             style: row
             columns: 4
+        - Storage:
+            style: row
+            columns: {{ homepage_storage_mounts | length }}
         - Local Services:
             style: row
             columns: 3
@@ -50,31 +73,41 @@
   ansible.builtin.copy:
     dest: "{{ local_services_stacks_dir }}/homepage/config/services.yaml"
     content: |
-      - Proxmox Monitoring:
+      - System Metrics:
           - CPU:
               widget:
                 type: glances
-                url: http://192.168.178.56:{{ glances_port }}
+                url: http://{{ homepage_proxmox_ip }}:{{ glances_port }}
                 version: 4
                 metric: cpu
           - Memory:
               widget:
                 type: glances
-                url: http://192.168.178.56:{{ glances_port }}
+                url: http://{{ homepage_proxmox_ip }}:{{ glances_port }}
                 version: 4
                 metric: memory
           - Disk I/O:
               widget:
                 type: glances
-                url: http://192.168.178.56:{{ glances_port }}
+                url: http://{{ homepage_proxmox_ip }}:{{ glances_port }}
                 version: 4
                 metric: disk:sda
           - CPU Temperature:
               widget:
                 type: glances
-                url: http://192.168.178.56:{{ glances_port }}
+                url: http://{{ homepage_proxmox_ip }}:{{ glances_port }}
                 version: 4
                 metric: sensor:Package id 0
+
+      - Storage:
+      {% for storage in homepage_storage_mounts %}
+          - {{ storage.name }}:
+              widget:
+                type: glances
+                url: http://{{ homepage_proxmox_ip }}:{{ glances_port }}
+                version: 4
+                metric: "fs:{{ storage.mount }}"
+      {% endfor %}
 
       - Local Services:
           - BentoPDF:
@@ -109,11 +142,10 @@
   ansible.builtin.copy:
     dest: "{{ local_services_stacks_dir }}/homepage/config/bookmarks.yaml"
     content: |
-      # Add custom bookmarks here
-      # - Developer:
-      #     - GitHub:
-      #         - icon: mdi-github
-      #           href: https://github.com
+      - Developer:
+        - Github:
+            - abbr: GH
+              href: https://github.com/dev-lukas/
     mode: "0644"
 
 - name: Deploy Homepage widgets.yaml
@@ -126,7 +158,7 @@
             dateStyle: long
             timeStyle: short
       - glances:
-          url: http://192.168.178.56:{{ glances_port }}
+          url: http://{{ homepage_proxmox_ip }}:{{ glances_port }}
           version: 4
           metric: info
           chart: false
