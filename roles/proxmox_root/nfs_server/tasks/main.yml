@@ -49,6 +49,14 @@
     mode: "0775"
     recurse: true
 
+- name: Set ownership on transcoding directory
+  ansible.builtin.file:
+    path: /mediapool/media/transcoding
+    owner: "100102"
+    group: "100105"
+    mode: "0755"
+    recurse: true
+
 - name: Configure NFS exports
   ansible.builtin.template:
     dest: /etc/exports
