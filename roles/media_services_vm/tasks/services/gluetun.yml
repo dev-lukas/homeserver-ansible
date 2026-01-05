@@ -21,17 +21,18 @@
           devices:
             - /dev/net/tun:/dev/net/tun
           environment:
-            - VPN_SERVICE_PROVIDER={{ media_services_vpn_service_provider }}
-            - VPN_TYPE={{ media_services_vpn_type }}
+            # Use custom provider for fixed endpoint
+            - VPN_SERVICE_PROVIDER=custom
+            - VPN_TYPE=wireguard
             - WIREGUARD_PRIVATE_KEY={{ vault_protonvpn_wireguard_private_key }}
             - WIREGUARD_ADDRESSES={{ vault_protonvpn_wireguard_addresses | default('10.2.0.2/32') }}
-            - SERVER_COUNTRIES=Switzerland
+            # Fixed endpoint ProtonVPN CH#609
+            - WIREGUARD_PUBLIC_KEY=Ii6hAbnu84wZ8NzVt5+ylO4FnX+ANrKNzpFOSYq9dks=
+            - WIREGUARD_ENDPOINT_IP=79.127.184.216
+            - WIREGUARD_ENDPOINT_PORT=51820
             - TZ={{ media_services_timezone }}
             # Allow local network access (for Prowlarr → Sonarr/Radarr communication)
             - FIREWALL_OUTBOUND_SUBNETS=192.168.178.0/24
-            # Health check settings
-            - HEALTH_VPN_DURATION_INITIAL=30s
-            - HEALTH_VPN_DURATION_ADDITION=5s
           ports:
             # Prowlarr via Gluetun
             - "{{ media_services_prowlarr_port }}:9696"

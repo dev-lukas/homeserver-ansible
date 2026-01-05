@@ -12,6 +12,11 @@ instance1:
   delete_unmanaged_quality_profiles:
     enabled: true
   
+  # Clone Remux profile for Special Edition movies
+  cloneQualityProfiles:
+    - from: Remux + WEB 2160p (GER)
+      to: Special Edition (GER)
+  
   # Include all required templates
   include:
     # Quality definitions
@@ -89,9 +94,19 @@ instance1:
         - name: Remux + WEB 2160p (GER)
     
     #==========================================================================
-    # SPECIAL EDITION
+    # SPECIAL EDITION - Apply to cloned Special Edition profile
     #==========================================================================
     - trash_ids:
         - 957d0f44b592285f26449575e8b1167e # Special Edition
       assign_scores_to:
-        - name: Remux + WEB 2160p (GER)
+        - name: Special Edition (GER)
+          score: 10000
+    
+    #==========================================================================
+    # x265 - Prefer for Anime (smaller files, good quality)
+    #==========================================================================
+    - trash_ids:
+        - 839bea857ed2c0a8e084f3cbdbd65ecb # x265 (HD)
+      assign_scores_to:
+        - name: Remux-1080p - Anime
+          score: 300
