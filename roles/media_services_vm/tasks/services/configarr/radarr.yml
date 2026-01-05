@@ -108,11 +108,11 @@ instance1:
         - 957d0f44b592285f26449575e8b1167e # Special Edition
       assign_scores_to:
         - name: Special Edition 4K Remux (GER)
-          score: 10000
+          score: 25000
         - name: Special Edition 4K (GER)
-          score: 10000
+          score: 25000
         - name: Special Edition 1080p (GER)
-          score: 10000
+          score: 25000
     
     #==========================================================================
     # x265 - Prefer for Anime (smaller files, good quality)
