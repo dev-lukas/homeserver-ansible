@@ -117,10 +117,12 @@
   failed_when: false
   when: jellyfin_igpu_passthrough
 
-# Ensure Jellyfin has access to media directory
-- name: Set media directory ownership
+# NOTE: Do NOT chown the entire media directory - it breaks SABnzbd and other services
+# that expect files owned by UID 1000. Jellyfin only needs READ access to media files.
+# Only chown transcoding directory if needed.
+- name: Ensure transcoding directory exists and is owned by jellyfin
   ansible.builtin.command:
-    cmd: "pct exec {{ jellyfin_vmid }} -- chown -R jellyfin:jellyfin {{ jellyfin_mediapool_target }}"
+    cmd: "pct exec {{ jellyfin_vmid }} -- sh -c 'mkdir -p {{ jellyfin_mediapool_target }}/transcoding && chown jellyfin:jellyfin {{ jellyfin_mediapool_target }}/transcoding'"
   changed_when: false
   failed_when: false
 
