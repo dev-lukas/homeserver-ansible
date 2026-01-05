@@ -89,3 +89,12 @@ instance1:
       assign_scores_to:
         - name: HD Bluray + WEB (GER)
         - name: WEB-1080p
+    
+    #==========================================================================
+    # x265 - Prefer for Anime (smaller files, good quality)
+    #==========================================================================
+    - trash_ids:
+        - 47435ece6b99a0b477caf360e79ba0bb # x265 (HD)
+      assign_scores_to:
+        - name: Remux-1080p - Anime
+          score: 300
