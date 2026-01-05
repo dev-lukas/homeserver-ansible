@@ -33,7 +33,7 @@ jellyfin_https_port: 8920
 
 # Security
 jellyfin_unprivileged: true
-jellyfin_nesting: false
+jellyfin_nesting: true
 
 # SSH
 jellyfin_ssh_port: 22
