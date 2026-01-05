@@ -41,15 +41,49 @@
       --start 0
   when: container_status.rc != 0
 
-# Configure iGPU passthrough in LXC config
-- name: Configure iGPU passthrough for hardware transcoding
+# Configure iGPU passthrough in LXC config (Proxmox 8.2+ dev0 syntax)
+# Get the render group GID from the host first
+- name: Get render group GID from host
+  ansible.builtin.shell: "getent group render | cut -d: -f3"
+  register: host_render_gid
+  changed_when: false
+  when: jellyfin_igpu_passthrough
+
+# Enable nesting (required for GPU passthrough)
+- name: Enable nesting on LXC
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
+    regexp: "^features:"
+    line: "features: nesting=1"
+    insertafter: "^arch:"
+  when: jellyfin_igpu_passthrough
+
+# Use Proxmox 8.2+ dev0 device passthrough syntax
+# uid=0 for root (Jellyfin runs as jellyfin but needs root-accessible device)
+# gid=render group for proper permissions
+- name: Configure GPU device passthrough (Proxmox 8.2+ syntax)
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
+    regexp: "^dev0:"
+    line: "dev0: /dev/dri/renderD128,uid=0,gid={{ host_render_gid.stdout }}"
+    insertafter: EOF
+  when: jellyfin_igpu_passthrough and host_render_gid.stdout | length > 0
+
+# Also add card0 for some applications that need it
+- name: Configure GPU card0 device passthrough
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
+    regexp: "^dev1:"
+    line: "dev1: /dev/dri/card0,uid=0,gid={{ host_render_gid.stdout }}"
+    insertafter: EOF
+  when: jellyfin_igpu_passthrough and host_render_gid.stdout | length > 0
+
+# Remove old lxc.mount.entry GPU passthrough (replaced by dev0/dev1)
+- name: Remove old lxc.mount.entry GPU passthrough block
   ansible.builtin.blockinfile:
     path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
     marker: "# {mark} ANSIBLE MANAGED - iGPU PASSTHROUGH"
-    block: |
-      lxc.cgroup2.devices.allow: c 226:0 rwm
-      lxc.cgroup2.devices.allow: c 226:128 rwm
-      lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir
+    state: absent
   when: jellyfin_igpu_passthrough
 
 # Configure UID/GID mapping to allow access to media files owned by 1000:1000
@@ -67,6 +101,12 @@
     regexp: "^root:1000:1$"
     line: "root:1000:1"
     create: true
+
+- name: Remove any existing lxc.idmap entries to prevent duplicates
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
+    regexp: "^lxc\\.idmap:"
+    state: absent
 
 - name: Configure LXC UID/GID mapping for media access
   ansible.builtin.blockinfile:

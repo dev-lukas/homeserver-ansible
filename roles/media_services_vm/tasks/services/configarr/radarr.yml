@@ -38,6 +38,9 @@ instance1:
     - template: radarr-custom-formats-uhd-remux-web-german
     - template: radarr-quality-profile-uhd-remux-web-german
     
+    # German Anime (custom template - WEBDL-720p only)
+    - template: template-radarr-anime-german
+    
     # English Anime
     - template: radarr-custom-formats-anime
     - template: radarr-quality-profile-anime
@@ -57,6 +60,7 @@ instance1:
         - name: HD Bluray + WEB (GER)
         - name: UHD Bluray + WEB (GER)
         - name: Remux + WEB 2160p (GER)
+        - name: Anime HD (GER)
         - name: Remux-1080p - Anime
     
     #==========================================================================
@@ -116,5 +120,5 @@ instance1:
     - trash_ids:
         - 839bea857ed2c0a8e084f3cbdbd65ecb # x265 (HD)
       assign_scores_to:
-        - name: Remux-1080p - Anime
+        - name: Anime HD (GER)
           score: 300

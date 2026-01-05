@@ -10,6 +10,38 @@
     group: "{{ media_services_pgid }}"
     mode: "0755"
 
+- name: Create Configarr custom formats directory
+  ansible.builtin.file:
+    path: "{{ media_services_stacks_dir }}/configarr/config/cfs"
+    state: directory
+    owner: "{{ media_services_puid }}"
+    group: "{{ media_services_pgid }}"
+    mode: "0755"
+
+- name: Create Configarr templates directory
+  ansible.builtin.file:
+    path: "{{ media_services_stacks_dir }}/configarr/config/templates"
+    state: directory
+    owner: "{{ media_services_puid }}"
+    group: "{{ media_services_pgid }}"
+    mode: "0755"
+
+- name: Copy custom format files
+  ansible.builtin.copy:
+    src: "configarr/cfs/"
+    dest: "{{ media_services_stacks_dir }}/configarr/config/cfs/"
+    owner: "{{ media_services_puid }}"
+    group: "{{ media_services_pgid }}"
+    mode: "0644"
+
+- name: Copy template files
+  ansible.builtin.copy:
+    src: "configarr/templates/"
+    dest: "{{ media_services_stacks_dir }}/configarr/config/templates/"
+    owner: "{{ media_services_puid }}"
+    group: "{{ media_services_pgid }}"
+    mode: "0644"
+
 - name: Deploy Configarr docker-compose.yml
   ansible.builtin.copy:
     dest: "{{ media_services_stacks_dir }}/configarr/docker-compose.yml"
@@ -25,6 +57,8 @@
           volumes:
             - ./config:/app/config
             - ./repos:/app/repos
+            - ./config/cfs:/app/cfs
+            - ./config/templates:/app/templates
     mode: "0644"
 
 - name: Create Configarr secrets file
@@ -51,7 +85,10 @@
     content: |
       # Configarr Configuration
       # Auto-generated from roles/media_services_vm/tasks/services/configarr/
-      # Profiles: Radarr (5) + Sonarr (6)
+      
+      # Custom formats and templates paths
+      localCustomFormatsPath: /app/cfs
+      localConfigTemplatesPath: /app/templates
       
       radarr:
       {{ radarr_profiles | indent(2, first=True) }}

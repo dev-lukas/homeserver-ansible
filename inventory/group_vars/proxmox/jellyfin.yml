@@ -34,4 +34,4 @@ jellyfin_https_port: 8920
 
 # Security settings
 jellyfin_unprivileged: true
-jellyfin_nesting: false
+jellyfin_nesting: true
