@@ -1,0 +1,61 @@
+---
+# Gluetun VPN container for secure internet access
+
+- name: Create Gluetun stack directory
+  ansible.builtin.file:
+    path: "{{ media_services_stacks_dir }}/gluetun"
+    state: directory
+    mode: "0755"
+
+- name: Deploy Gluetun docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ media_services_stacks_dir }}/gluetun/docker-compose.yml"
+    content: |
+      services:
+        gluetun:
+          image: qmcgaw/gluetun:latest
+          container_name: gluetun
+          restart: unless-stopped
+          cap_add:
+            - NET_ADMIN
+          devices:
+            - /dev/net/tun:/dev/net/tun
+          environment:
+            - VPN_SERVICE_PROVIDER={{ media_services_vpn_service_provider }}
+            - VPN_TYPE={{ media_services_vpn_type }}
+            - WIREGUARD_PRIVATE_KEY={{ vault_protonvpn_wireguard_private_key }}
+            - WIREGUARD_ADDRESSES={{ vault_protonvpn_wireguard_addresses | default('10.2.0.2/32') }}
+            - SERVER_COUNTRIES=Switzerland
+            - TZ={{ media_services_timezone }}
+            # Allow local network access (for Prowlarr → Sonarr/Radarr communication)
+            - FIREWALL_OUTBOUND_SUBNETS=192.168.178.0/24
+            # Health check settings
+            - HEALTH_VPN_DURATION_INITIAL=30s
+            - HEALTH_VPN_DURATION_ADDITION=5s
+          ports:
+            # Prowlarr via Gluetun
+            - "{{ media_services_prowlarr_port }}:9696"
+            # SABnzbd via Gluetun
+            - "{{ media_services_sabnzbd_port }}:8080"
+            # Umlautadaptarr via Gluetun (proxy mode uses 5006)
+            - "{{ media_services_umlautadaptarr_port }}:5006"
+          volumes:
+            - ./config:/gluetun
+          healthcheck:
+            test: ["CMD", "wget", "-qO-", "https://ipinfo.io/ip"]
+            interval: 60s
+            timeout: 10s
+            retries: 3
+            start_period: 30s
+    mode: "0644"
+
+- name: Start Gluetun stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ media_services_stacks_dir }}/gluetun"
+  register: gluetun_start
+  changed_when: "'Started' in gluetun_start.stderr or 'Created' in gluetun_start.stderr"
+
+- name: Wait for Gluetun VPN to establish connection
+  ansible.builtin.pause:
+    seconds: 30

@@ -1,0 +1,36 @@
+---
+# Bazarr - Subtitle management for Sonarr and Radarr
+
+- name: Create Bazarr stack directory
+  ansible.builtin.file:
+    path: "{{ media_services_stacks_dir }}/bazarr/config"
+    state: directory
+    mode: "0755"
+
+- name: Deploy Bazarr docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ media_services_stacks_dir }}/bazarr/docker-compose.yml"
+    content: |
+      services:
+        bazarr:
+          image: lscr.io/linuxserver/bazarr:latest
+          container_name: bazarr
+          restart: unless-stopped
+          ports:
+            - "{{ media_services_bazarr_port }}:6767"
+          environment:
+            - PUID={{ media_services_puid }}
+            - PGID={{ media_services_pgid }}
+            - TZ={{ media_services_timezone }}
+          volumes:
+            - ./config:/config
+            - {{ media_services_nfs_mount }}/tv:/tv
+            - {{ media_services_nfs_mount }}/movies:/movies
+    mode: "0644"
+
+- name: Start Bazarr stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ media_services_stacks_dir }}/bazarr"
+  register: bazarr_start
+  changed_when: "'Started' in bazarr_start.stderr or 'Created' in bazarr_start.stderr"

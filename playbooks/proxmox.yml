@@ -4,6 +4,7 @@
 - name: Configure Proxmox hosts
   hosts: proxmox
   become: true
+  gather_facts: false  # Defer until deploy key exists
 
   pre_tasks:
     - name: Write deploy key to temp file
@@ -15,6 +16,10 @@
       become: false
       run_once: true
       no_log: true
+      tags: always
+
+    - name: Gather facts after deploy key is ready
+      ansible.builtin.setup:
       tags: always
 
   roles:
@@ -69,9 +74,39 @@
         - lxc
         - containers
 
+    - role: proxmox_root/nfs_server
+      tags:
+        - nfs
+        - storage
+        - media
+
     - role: local_services_vm
       tags:
         - local_services
         - docker
         - lxc
         - containers
+
+    - role: jellyfin_lxc
+      tags:
+        - jellyfin
+        - media
+        - lxc
+        - containers
+
+    - role: media_services_vm
+      tags:
+        - media_services
+        - arr
+        - docker
+        - vm
+
+  post_tasks:
+    - name: Remove deploy key from temp
+      ansible.builtin.file:
+        path: /tmp/.ansible_deploy_key
+        state: absent
+      delegate_to: localhost
+      become: false
+      run_once: true
+      tags: always

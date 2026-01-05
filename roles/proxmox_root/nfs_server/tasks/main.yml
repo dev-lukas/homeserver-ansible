@@ -1,0 +1,106 @@
+---
+# NFS server setup on Proxmox
+# Exports mediapool for VMs to mount
+
+- name: Install NFS server packages
+  ansible.builtin.apt:
+    name:
+      - nfs-kernel-server
+      - nfs-common
+    state: present
+    update_cache: true
+
+- name: Ensure export directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ nfs_exports }}"
+
+# Create media subdirectories with correct ownership for containers (PUID/PGID 1000)
+- name: Create media subdirectories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0775"
+  loop:
+    - /mediapool/media/tv
+    - /mediapool/media/movies
+    - /mediapool/media/downloads
+    - /mediapool/media/downloads/incomplete
+
+# Jellyfin transcoding cache - owned by UID 100102 (unprivileged LXC maps UID 102→100102)
+# Jellyfin runs as UID 102 inside the container
+- name: Create transcoding directory for Jellyfin
+  ansible.builtin.file:
+    path: /mediapool/media/transcoding
+    state: directory
+    owner: "100102"
+    group: "100105"
+    mode: "0755"
+
+- name: Set ownership on media directory
+  ansible.builtin.file:
+    path: /mediapool/media
+    owner: "1000"
+    group: "1000"
+    mode: "0775"
+    recurse: true
+
+- name: Configure NFS exports
+  ansible.builtin.template:
+    dest: /etc/exports
+    src: exports.j2
+    mode: "0644"
+  notify: Reload NFS exports
+
+- name: Enable and start NFS server
+  ansible.builtin.systemd:
+    name: nfs-kernel-server
+    state: started
+    enabled: true
+
+- name: Verify NFS exports
+  ansible.builtin.command:
+    cmd: exportfs -v
+  register: nfs_exports_status
+  changed_when: false
+
+- name: Display current NFS exports
+  ansible.builtin.debug:
+    msg: "{{ nfs_exports_status.stdout_lines }}"
+
+# Configure Proxmox cluster firewall to allow NFS traffic from media_services_vm only
+- name: Add NFS firewall rules to Proxmox cluster
+  ansible.builtin.shell:
+    cmd: |
+      # Check if cluster.fw exists, create if not
+      if [ ! -f /etc/pve/firewall/cluster.fw ]; then
+        cat > /etc/pve/firewall/cluster.fw << 'EOF'
+      [OPTIONS]
+      enable: 1
+      policy_in: ACCEPT
+      policy_out: ACCEPT
+
+      [RULES]
+      EOF
+      fi
+      
+      # Add NFS rules if not present (restricted to media_services_vm IP)
+      if ! grep -q "dport 2049" /etc/pve/firewall/cluster.fw; then
+        echo "" >> /etc/pve/firewall/cluster.fw
+        echo "# NFS Server ports - restricted to media_services_vm" >> /etc/pve/firewall/cluster.fw
+        echo "IN ACCEPT -source {{ media_services_ip }} -p tcp -dport 111 -log nolog" >> /etc/pve/firewall/cluster.fw
+        echo "IN ACCEPT -source {{ media_services_ip }} -p udp -dport 111 -log nolog" >> /etc/pve/firewall/cluster.fw
+        echo "IN ACCEPT -source {{ media_services_ip }} -p tcp -dport 2049 -log nolog" >> /etc/pve/firewall/cluster.fw
+        echo "IN ACCEPT -source {{ media_services_ip }} -p udp -dport 2049 -log nolog" >> /etc/pve/firewall/cluster.fw
+      fi
+  changed_when: false
+  notify: Reload pve-firewall
+
+- name: Reload Proxmox firewall immediately
+  ansible.builtin.command:
+    cmd: pve-firewall restart
+  changed_when: false
