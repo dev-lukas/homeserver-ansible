@@ -1,0 +1,37 @@
+---
+# Security hardening for Media Services VM (Debian)
+
+- name: Disable root password login via SSH
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PermitRootLogin"
+    line: "PermitRootLogin prohibit-password"
+    backup: true
+  notify: Restart SSH
+
+- name: Disable password authentication for SSH
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PasswordAuthentication"
+    line: "PasswordAuthentication no"
+  notify: Restart SSH
+
+- name: Configure sysctl security settings
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-security.conf
+    content: |
+      # Ignore ICMP redirects
+      net.ipv4.conf.all.accept_redirects = 0
+      net.ipv6.conf.all.accept_redirects = 0
+      
+      # Ignore source-routed packets
+      net.ipv4.conf.all.accept_source_route = 0
+      net.ipv6.conf.all.accept_source_route = 0
+      
+      # Log martian packets
+      net.ipv4.conf.all.log_martians = 1
+      
+      # Enable SYN cookies
+      net.ipv4.tcp_syncookies = 1
+    mode: "0644"
+  notify: Apply sysctl settings

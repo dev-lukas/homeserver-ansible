@@ -1,0 +1,128 @@
+---
+# Jellyfin LXC role
+# Creates a Debian 13 LXC container with iGPU passthrough for hardware transcoding
+
+- name: Download Debian 13 LXC template if not present
+  ansible.builtin.command:
+    cmd: pveam download local {{ jellyfin_template_download }}
+  args:
+    creates: /var/lib/vz/template/cache/{{ jellyfin_template_download }}
+  register: template_download
+
+- name: Check if LXC container exists
+  ansible.builtin.command:
+    cmd: "pct status {{ jellyfin_vmid }}"
+  register: container_status
+  failed_when: false
+  changed_when: false
+
+- name: Ensure mediapool media subdirectory exists
+  ansible.builtin.file:
+    path: "{{ jellyfin_mediapool_source }}"
+    state: directory
+    mode: "0755"
+  when: container_status.rc != 0
+
+- name: Create Jellyfin LXC container
+  ansible.builtin.command:
+    cmd: >
+      pct create {{ jellyfin_vmid }} {{ jellyfin_template }}
+      --hostname {{ jellyfin_hostname }}
+      --storage {{ jellyfin_storage }}
+      --rootfs {{ jellyfin_storage }}:{{ jellyfin_disk_size }}
+      --memory {{ jellyfin_memory }}
+      --swap {{ jellyfin_swap }}
+      --cores {{ jellyfin_cores }}
+      --net0 name=eth0,bridge={{ jellyfin_bridge }},ip={{ jellyfin_ip }}/{{ jellyfin_netmask }},gw={{ jellyfin_gateway }}
+      --nameserver {{ jellyfin_nameserver }}
+      --unprivileged {{ '1' if jellyfin_unprivileged else '0' }}
+      --features nesting={{ '1' if jellyfin_nesting else '0' }}
+      --onboot 1
+      --start 0
+  when: container_status.rc != 0
+
+# Configure iGPU passthrough in LXC config
+- name: Configure iGPU passthrough for hardware transcoding
+  ansible.builtin.blockinfile:
+    path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
+    marker: "# {mark} ANSIBLE MANAGED - iGPU PASSTHROUGH"
+    block: |
+      lxc.cgroup2.devices.allow: c 226:0 rwm
+      lxc.cgroup2.devices.allow: c 226:128 rwm
+      lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir
+  when: jellyfin_igpu_passthrough
+
+# Configure UID/GID mapping to allow access to media files owned by 1000:1000
+# This maps container UID 1000 to host UID 1000 (bypassing the unprivileged offset)
+- name: Configure subuid for root user (allow mapping UID 1000)
+  ansible.builtin.lineinfile:
+    path: /etc/subuid
+    regexp: "^root:1000:1$"
+    line: "root:1000:1"
+    create: true
+
+- name: Configure subgid for root user (allow mapping GID 1000)
+  ansible.builtin.lineinfile:
+    path: /etc/subgid
+    regexp: "^root:1000:1$"
+    line: "root:1000:1"
+    create: true
+
+- name: Configure LXC UID/GID mapping for media access
+  ansible.builtin.blockinfile:
+    path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
+    marker: "# {mark} ANSIBLE MANAGED - UID/GID MAPPING"
+    block: |
+      # Map UIDs 0-999 to 100000-100999 (normal unprivileged)
+      lxc.idmap: u 0 100000 1000
+      lxc.idmap: g 0 100000 1000
+      # Map UID/GID 1000 to host 1000 (for media file access)
+      lxc.idmap: u 1000 1000 1
+      lxc.idmap: g 1000 1000 1
+      # Map UIDs 1001-65535 to 101001-165535 (normal unprivileged)
+      lxc.idmap: u 1001 101001 64535
+      lxc.idmap: g 1001 101001 64535
+
+# Configure mediapool bind mount
+- name: Configure mediapool bind mount
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
+    regexp: "^mp0:"
+    line: "mp0: {{ jellyfin_mediapool_source }},mp={{ jellyfin_mediapool_target }}"
+    insertafter: EOF
+
+- name: Start the LXC container
+  ansible.builtin.command:
+    cmd: "pct start {{ jellyfin_vmid }}"
+  register: start_result
+  failed_when: false
+  changed_when: start_result.rc == 0
+
+- name: Wait for container to be ready
+  ansible.builtin.pause:
+    seconds: 10
+  when: start_result.changed
+
+- name: Update container packages
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- apt-get update"
+  changed_when: false
+
+- name: Upgrade container packages
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- apt-get upgrade -y"
+  changed_when: false
+
+- name: Install required packages in container
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- apt-get install -y curl ca-certificates gnupg sudo"
+  changed_when: false
+
+- name: Apply security hardening in container
+  ansible.builtin.include_tasks: harden_container.yml
+
+- name: Install Jellyfin
+  ansible.builtin.include_tasks: install_jellyfin.yml
+
+- name: Configure Proxmox firewall for Jellyfin
+  ansible.builtin.include_tasks: firewall.yml

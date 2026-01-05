@@ -1,0 +1,10 @@
+---
+# Handlers for jellyfin_lxc role
+
+- name: Reload pve-firewall
+  ansible.builtin.command:
+    cmd: pve-firewall restart
+
+- name: Restart Jellyfin
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- systemctl restart jellyfin"

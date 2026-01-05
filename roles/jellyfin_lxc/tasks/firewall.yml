@@ -1,0 +1,53 @@
+---
+# Configure Proxmox firewall for Jellyfin LXC
+
+# Enable firewall at datacenter level using API
+- name: Enable datacenter firewall
+  ansible.builtin.command:
+    cmd: pvesh set /cluster/firewall/options --enable 1
+  changed_when: false
+
+# Configure container-specific firewall
+- name: Ensure firewall config directory exists
+  ansible.builtin.file:
+    path: /etc/pve/firewall
+    state: directory
+    mode: "0755"
+
+- name: Configure Jellyfin LXC firewall
+  ansible.builtin.shell:
+    cmd: |
+      cat > /etc/pve/firewall/{{ jellyfin_vmid }}.fw << FWEOF
+      [OPTIONS]
+      enable: 1
+      policy_in: DROP
+      policy_out: ACCEPT
+
+      [RULES]
+      # SSH access
+      IN ACCEPT -p tcp -dport {{ jellyfin_ssh_port }} -log nolog
+
+      # Jellyfin Web UI
+      IN ACCEPT -p tcp -dport {{ jellyfin_web_port }} -log nolog
+
+      # Jellyfin HTTPS
+      IN ACCEPT -p tcp -dport {{ jellyfin_https_port }} -log nolog
+
+      # Allow ICMP (ping)
+      IN ACCEPT -p icmp -log nolog
+      FWEOF
+  notify: Reload pve-firewall
+
+# Get current net0 config and enable firewall flag
+- name: Get current net0 configuration
+  ansible.builtin.shell:
+    cmd: "pct config {{ jellyfin_vmid }} | grep '^net0:'"
+  register: net0_config
+  changed_when: false
+  failed_when: false
+
+- name: Enable firewall on container network interface
+  ansible.builtin.command:
+    cmd: "pct set {{ jellyfin_vmid }} --net0 name=eth0,bridge={{ jellyfin_bridge }},ip={{ jellyfin_ip }}/{{ jellyfin_netmask }},gw={{ jellyfin_gateway }},firewall=1"
+  when: net0_config.stdout != '' and 'firewall=1' not in net0_config.stdout
+  changed_when: false

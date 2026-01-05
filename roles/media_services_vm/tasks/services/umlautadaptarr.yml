@@ -1,0 +1,46 @@
+---
+# Umlautadaptarr - German umlaut handling for *arr apps (routed via Gluetun VPN)
+
+- name: Create Umlautadaptarr stack directory
+  ansible.builtin.file:
+    path: "{{ media_services_stacks_dir }}/umlautadaptarr"
+    state: directory
+    mode: "0755"
+
+- name: Deploy Umlautadaptarr docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ media_services_stacks_dir }}/umlautadaptarr/docker-compose.yml"
+    content: |
+      services:
+        umlautadaptarr:
+          image: pcjones/umlautadaptarr:latest
+          container_name: umlautadaptarr
+          restart: unless-stopped
+          # Route all traffic through Gluetun VPN (acts as kill-switch)
+          network_mode: "container:gluetun"
+          environment:
+            - TZ={{ media_services_timezone }}
+            # Sonarr - must be enabled for umlautadaptarr to work
+            - SONARR__ENABLED=true
+            - SONARR__HOST=http://{{ media_services_ip }}:8989
+            - SONARR__APIKEY={{ vault_sonarr_api_key | default('APIKEY') }}
+            # Radarr
+            - RADARR__ENABLED=true
+            - RADARR__HOST=http://{{ media_services_ip }}:7878
+            - RADARR__APIKEY={{ vault_radarr_api_key | default('APIKEY') }}
+            # Readarr
+            - READARR__ENABLED=false
+            - READARR__HOST=http://localhost:8787
+            - READARR__APIKEY=APIKEY
+            # Lidarr
+            - LIDARR__ENABLED=false
+            - LIDARR__HOST=http://localhost:8686
+            - LIDARR__APIKEY=APIKEY
+    mode: "0644"
+
+- name: Start Umlautadaptarr stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ media_services_stacks_dir }}/umlautadaptarr"
+  register: umlautadaptarr_start
+  changed_when: "'Started' in umlautadaptarr_start.stderr or 'Created' in umlautadaptarr_start.stderr"

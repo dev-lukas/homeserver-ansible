@@ -84,3 +84,34 @@ reverse_proxy_backends:
     backend_port: 61208
     websocket: true
     internal_only: true
+  # Media services
+  - name: "jellyfin"
+    subdomain: "watch"
+    backend_host: "192.168.178.10"
+    backend_port: 8096
+    websocket: true  # Required for streaming
+    internal_only: false  # Publicly accessible
+  - name: "sonarr"
+    subdomain: "sonarr"
+    backend_host: "192.168.178.11"
+    backend_port: 8989
+    websocket: false
+    internal_only: true
+  - name: "radarr"
+    subdomain: "radarr"
+    backend_host: "192.168.178.11"
+    backend_port: 7878
+    websocket: false
+    internal_only: true
+  - name: "prowlarr"
+    subdomain: "prowlarr"
+    backend_host: "192.168.178.11"
+    backend_port: 9696
+    websocket: false
+    internal_only: true
+  - name: "sabnzbd"
+    subdomain: "sabnzbd"
+    backend_host: "192.168.178.11"
+    backend_port: 8080
+    websocket: false
+    internal_only: true
