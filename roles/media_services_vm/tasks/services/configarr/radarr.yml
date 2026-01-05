@@ -12,10 +12,14 @@ instance1:
   delete_unmanaged_quality_profiles:
     enabled: true
   
-  # Clone Remux profile for Special Edition movies
+  # Clone profiles for Special Edition movies
   cloneQualityProfiles:
     - from: Remux + WEB 2160p (GER)
-      to: Special Edition (GER)
+      to: Special Edition 4K Remux (GER)
+    - from: UHD Bluray + WEB (GER)
+      to: Special Edition 4K (GER)
+    - from: HD Bluray + WEB (GER)
+      to: Special Edition 1080p (GER)
   
   # Include all required templates
   include:
@@ -94,12 +98,16 @@ instance1:
         - name: Remux + WEB 2160p (GER)
     
     #==========================================================================
-    # SPECIAL EDITION - Apply to cloned Special Edition profile
+    # SPECIAL EDITION - Apply to all cloned Special Edition profiles
     #==========================================================================
     - trash_ids:
         - 957d0f44b592285f26449575e8b1167e # Special Edition
       assign_scores_to:
-        - name: Special Edition (GER)
+        - name: Special Edition 4K Remux (GER)
+          score: 10000
+        - name: Special Edition 4K (GER)
+          score: 10000
+        - name: Special Edition 1080p (GER)
           score: 10000
     
     #==========================================================================
