@@ -7,6 +7,18 @@
   hosts: proxmox-root
   gather_facts: false
   tags: [proxmox, maintenance]
+  pre_tasks:
+    - name: Write deploy key to temp file
+      ansible.builtin.copy:
+        content: "{{ vault_ansible_deploy_private_key }}"
+        dest: /tmp/.ansible_deploy_key
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      no_log: true
+      tags: always
+
   tasks:
     - name: Update apt cache
       ansible.builtin.apt:
@@ -181,3 +193,11 @@
         path: "{{ ssh_key_path }}"
         state: absent
 
+    - name: Remove local deploy key
+      ansible.builtin.file:
+        path: /tmp/.ansible_deploy_key
+        state: absent
+      delegate_to: localhost
+      become: false
+      run_once: true
+      tags: always
