@@ -1,0 +1,8 @@
+---
+# NFS server defaults for Proxmox
+
+# NFS exports - restricted to specific VMs for security
+nfs_exports:
+  - path: "/mediapool/media"
+    clients: "{{ media_services_ip }}"  # Only media_services_vm can mount
+    options: "rw,sync,no_subtree_check,no_root_squash"

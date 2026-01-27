@@ -1,0 +1,34 @@
+---
+# Prowlarr - Indexer manager (routed via Gluetun VPN)
+
+- name: Create Prowlarr stack directory
+  ansible.builtin.file:
+    path: "{{ media_services_stacks_dir }}/prowlarr/config"
+    state: directory
+    mode: "0755"
+
+- name: Deploy Prowlarr docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ media_services_stacks_dir }}/prowlarr/docker-compose.yml"
+    content: |
+      services:
+        prowlarr:
+          image: lscr.io/linuxserver/prowlarr:latest
+          container_name: prowlarr
+          restart: unless-stopped
+          # Route all traffic through Gluetun VPN (acts as kill-switch)
+          network_mode: "container:gluetun"
+          environment:
+            - PUID={{ media_services_puid }}
+            - PGID={{ media_services_pgid }}
+            - TZ={{ media_services_timezone }}
+          volumes:
+            - ./config:/config
+    mode: "0644"
+
+- name: Start Prowlarr stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ media_services_stacks_dir }}/prowlarr"
+  register: prowlarr_start
+  changed_when: "'Started' in prowlarr_start.stderr or 'Created' in prowlarr_start.stderr"

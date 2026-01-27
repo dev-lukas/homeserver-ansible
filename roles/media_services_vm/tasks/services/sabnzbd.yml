@@ -1,0 +1,38 @@
+---
+# SABnzbd - Usenet downloader (routed via Gluetun VPN)
+
+- name: Create SABnzbd stack directory
+  ansible.builtin.file:
+    path: "{{ media_services_stacks_dir }}/sabnzbd/config"
+    state: directory
+    mode: "0755"
+
+- name: Deploy SABnzbd docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ media_services_stacks_dir }}/sabnzbd/docker-compose.yml"
+    content: |
+      services:
+        sabnzbd:
+          image: lscr.io/linuxserver/sabnzbd:latest
+          container_name: sabnzbd
+          restart: unless-stopped
+          # Route all traffic through Gluetun VPN (acts as kill-switch)
+          network_mode: "container:gluetun"
+          environment:
+            - PUID={{ media_services_puid }}
+            - PGID={{ media_services_pgid }}
+            - TZ={{ media_services_timezone }}
+            # Allow access via reverse proxy hostname
+            - HOST_WHITELIST_ENTRIES=sabnzbd.{{ reverse_proxy_domain | default('lukas-roth.dev') }}
+          volumes:
+            - ./config:/config
+            - {{ media_services_nfs_mount }}/downloads:/downloads
+            - {{ media_services_nfs_mount }}/downloads/incomplete:/incomplete-downloads
+    mode: "0644"
+
+- name: Start SABnzbd stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ media_services_stacks_dir }}/sabnzbd"
+  register: sabnzbd_start
+  changed_when: "'Started' in sabnzbd_start.stderr or 'Created' in sabnzbd_start.stderr"

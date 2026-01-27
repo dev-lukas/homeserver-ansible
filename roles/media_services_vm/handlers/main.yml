@@ -1,0 +1,33 @@
+---
+# Handlers for media_services_vm role
+
+- name: Restart Docker
+  ansible.builtin.systemd:
+    name: docker
+    state: restarted
+  delegate_to: "{{ media_services_hostname }}"
+
+- name: Reload UFW
+  ansible.builtin.command:
+    cmd: ufw reload
+  delegate_to: "{{ media_services_hostname }}"
+
+- name: Reload pve-firewall
+  ansible.builtin.command:
+    cmd: pve-firewall restart
+
+- name: Restart SSH
+  ansible.builtin.systemd:
+    name: ssh
+    state: restarted
+  delegate_to: "{{ media_services_hostname }}"
+
+- name: Apply sysctl settings
+  ansible.builtin.command:
+    cmd: sysctl -p /etc/sysctl.d/99-security.conf
+  delegate_to: "{{ media_services_hostname }}"
+
+- name: Reload NFS mounts
+  ansible.builtin.command:
+    cmd: mount -a
+  delegate_to: "{{ media_services_hostname }}"

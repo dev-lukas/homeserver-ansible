@@ -1,0 +1,37 @@
+---
+# Jellyfin LXC container configuration
+
+# Container settings
+jellyfin_vmid: 105
+jellyfin_hostname: "jellyfin"
+jellyfin_template: "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
+jellyfin_template_download: "debian-13-standard_13.1-2_amd64.tar.zst"
+jellyfin_storage: "vmpool"
+jellyfin_disk_size: "16"  # Size in GB
+jellyfin_memory: 4096
+jellyfin_swap: 512
+jellyfin_cores: 4
+
+# Network configuration
+jellyfin_bridge: "vmbr0"
+jellyfin_ip: "192.168.178.10"
+jellyfin_gateway: "192.168.178.1"
+jellyfin_netmask: "24"
+jellyfin_nameserver: "192.168.178.2"
+
+# iGPU passthrough settings
+jellyfin_igpu_passthrough: true
+# Device IDs for Intel iGPU (card0 = 226:0, renderD128 = 226:128)
+jellyfin_igpu_gid: 44  # video group GID on host
+
+# Media storage mount
+jellyfin_mediapool_source: "/mediapool/media"
+jellyfin_mediapool_target: "/media"
+
+# Jellyfin ports
+jellyfin_web_port: 8096
+jellyfin_https_port: 8920
+
+# Security settings
+jellyfin_unprivileged: true
+jellyfin_nesting: true
