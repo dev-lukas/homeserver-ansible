@@ -1,0 +1,168 @@
+---
+# Jellyfin LXC role
+# Creates a Debian 13 LXC container with iGPU passthrough for hardware transcoding
+
+- name: Download Debian 13 LXC template if not present
+  ansible.builtin.command:
+    cmd: pveam download local {{ jellyfin_template_download }}
+  args:
+    creates: /var/lib/vz/template/cache/{{ jellyfin_template_download }}
+  register: template_download
+
+- name: Check if LXC container exists
+  ansible.builtin.command:
+    cmd: "pct status {{ jellyfin_vmid }}"
+  register: container_status
+  failed_when: false
+  changed_when: false
+
+- name: Ensure mediapool media subdirectory exists
+  ansible.builtin.file:
+    path: "{{ jellyfin_mediapool_source }}"
+    state: directory
+    mode: "0755"
+  when: container_status.rc != 0
+
+- name: Create Jellyfin LXC container
+  ansible.builtin.command:
+    cmd: >
+      pct create {{ jellyfin_vmid }} {{ jellyfin_template }}
+      --hostname {{ jellyfin_hostname }}
+      --storage {{ jellyfin_storage }}
+      --rootfs {{ jellyfin_storage }}:{{ jellyfin_disk_size }}
+      --memory {{ jellyfin_memory }}
+      --swap {{ jellyfin_swap }}
+      --cores {{ jellyfin_cores }}
+      --net0 name=eth0,bridge={{ jellyfin_bridge }},ip={{ jellyfin_ip }}/{{ jellyfin_netmask }},gw={{ jellyfin_gateway }}
+      --nameserver {{ jellyfin_nameserver }}
+      --unprivileged {{ '1' if jellyfin_unprivileged else '0' }}
+      --features nesting={{ '1' if jellyfin_nesting else '0' }}
+      --onboot 1
+      --start 0
+  when: container_status.rc != 0
+
+# Configure iGPU passthrough in LXC config (Proxmox 8.2+ dev0 syntax)
+# Get the render group GID from the host first
+- name: Get render group GID from host
+  ansible.builtin.shell: "getent group render | cut -d: -f3"
+  register: host_render_gid
+  changed_when: false
+  when: jellyfin_igpu_passthrough
+
+# Enable nesting (required for GPU passthrough)
+- name: Enable nesting on LXC
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
+    regexp: "^features:"
+    line: "features: nesting=1"
+    insertafter: "^arch:"
+  when: jellyfin_igpu_passthrough
+
+# Use Proxmox 8.2+ dev0 device passthrough syntax
+# uid=0 for root (Jellyfin runs as jellyfin but needs root-accessible device)
+# gid=render group for proper permissions
+- name: Configure GPU device passthrough (Proxmox 8.2+ syntax)
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
+    regexp: "^dev0:"
+    line: "dev0: /dev/dri/renderD128,uid=0,gid={{ host_render_gid.stdout }}"
+    insertafter: EOF
+  when: jellyfin_igpu_passthrough and host_render_gid.stdout | length > 0
+
+# Also add card0 for some applications that need it
+- name: Configure GPU card0 device passthrough
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
+    regexp: "^dev1:"
+    line: "dev1: /dev/dri/card0,uid=0,gid={{ host_render_gid.stdout }}"
+    insertafter: EOF
+  when: jellyfin_igpu_passthrough and host_render_gid.stdout | length > 0
+
+# Remove old lxc.mount.entry GPU passthrough (replaced by dev0/dev1)
+- name: Remove old lxc.mount.entry GPU passthrough block
+  ansible.builtin.blockinfile:
+    path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
+    marker: "# {mark} ANSIBLE MANAGED - iGPU PASSTHROUGH"
+    state: absent
+  when: jellyfin_igpu_passthrough
+
+# Configure UID/GID mapping to allow access to media files owned by 1000:1000
+# This maps container UID 1000 to host UID 1000 (bypassing the unprivileged offset)
+- name: Configure subuid for root user (allow mapping UID 1000)
+  ansible.builtin.lineinfile:
+    path: /etc/subuid
+    regexp: "^root:1000:1$"
+    line: "root:1000:1"
+    create: true
+
+- name: Configure subgid for root user (allow mapping GID 1000)
+  ansible.builtin.lineinfile:
+    path: /etc/subgid
+    regexp: "^root:1000:1$"
+    line: "root:1000:1"
+    create: true
+
+- name: Remove any existing lxc.idmap entries to prevent duplicates
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
+    regexp: "^lxc\\.idmap:"
+    state: absent
+
+- name: Configure LXC UID/GID mapping for media access
+  ansible.builtin.blockinfile:
+    path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
+    marker: "# {mark} ANSIBLE MANAGED - UID/GID MAPPING"
+    block: |
+      # Map UIDs 0-999 to 100000-100999 (normal unprivileged)
+      lxc.idmap: u 0 100000 1000
+      lxc.idmap: g 0 100000 1000
+      # Map UID/GID 1000 to host 1000 (for media file access)
+      lxc.idmap: u 1000 1000 1
+      lxc.idmap: g 1000 1000 1
+      # Map UIDs 1001-65535 to 101001-165535 (normal unprivileged)
+      lxc.idmap: u 1001 101001 64535
+      lxc.idmap: g 1001 101001 64535
+
+# Configure mediapool bind mount
+- name: Configure mediapool bind mount
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
+    regexp: "^mp0:"
+    line: "mp0: {{ jellyfin_mediapool_source }},mp={{ jellyfin_mediapool_target }}"
+    insertafter: EOF
+
+- name: Start the LXC container
+  ansible.builtin.command:
+    cmd: "pct start {{ jellyfin_vmid }}"
+  register: start_result
+  failed_when: false
+  changed_when: start_result.rc == 0
+
+- name: Wait for container to be ready
+  ansible.builtin.pause:
+    seconds: 10
+  when: start_result.changed
+
+- name: Update container packages
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- apt-get update"
+  changed_when: false
+
+- name: Upgrade container packages
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- apt-get upgrade -y"
+  changed_when: false
+
+- name: Install required packages in container
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- apt-get install -y curl ca-certificates gnupg sudo"
+  changed_when: false
+
+- name: Apply security hardening in container
+  ansible.builtin.include_tasks: harden_container.yml
+
+- name: Install Jellyfin
+  ansible.builtin.include_tasks: install_jellyfin.yml
+
+- name: Configure Proxmox firewall for Jellyfin
+  ansible.builtin.include_tasks: firewall.yml

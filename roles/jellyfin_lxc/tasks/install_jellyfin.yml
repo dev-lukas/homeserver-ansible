@@ -1,0 +1,160 @@
+---
+# Install Jellyfin in LXC container
+# Manual replication of https://repo.jellyfin.org/install-debuntu.sh for Debian 13 (trixie)
+
+# Step 1: Install dependencies
+- name: Install Jellyfin dependencies
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- apt-get install -y curl gnupg"
+  changed_when: false
+
+# Step 2: Create APT keyring directory
+- name: Ensure APT keyrings directory exists
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- mkdir -p /etc/apt/keyrings"
+  changed_when: false
+
+# Step 3: Download and install GPG key
+- name: Download Jellyfin repository GPG key
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- sh -c 'curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor --yes -o /etc/apt/keyrings/jellyfin.gpg'"
+  changed_when: false
+
+- name: Set GPG key permissions
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- chmod 644 /etc/apt/keyrings/jellyfin.gpg"
+  changed_when: false
+
+# Step 4: Add Jellyfin repository (Deb822 format for trixie)
+- name: Add Jellyfin repository
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ jellyfin_vmid }} -- sh -c 'cat > /etc/apt/sources.list.d/jellyfin.sources << EOF
+      Types: deb
+      URIs: https://repo.jellyfin.org/debian
+      Suites: trixie
+      Components: main
+      Architectures: amd64
+      Signed-By: /etc/apt/keyrings/jellyfin.gpg
+      EOF'
+  changed_when: false
+
+# Step 5: Update apt and install Jellyfin
+- name: Update APT cache
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- apt-get update"
+  changed_when: false
+
+- name: Install Jellyfin metapackage
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- apt-get install -y jellyfin"
+  changed_when: false
+
+# Step 6: Fix permissions (workaround from install script)
+- name: Fix Jellyfin config permissions
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- chown -R jellyfin:adm /etc/jellyfin"
+  changed_when: false
+  failed_when: false
+
+# Configure Jellyfin user for iGPU access
+# Key insight: Sync render/video group GIDs between host and container
+
+# Get host render and video GIDs
+- name: Get host render group GID
+  ansible.builtin.shell: "getent group render | cut -d: -f3"
+  register: host_render_gid
+  changed_when: false
+  delegate_to: "{{ inventory_hostname }}"
+  when: jellyfin_igpu_passthrough
+
+- name: Get host video group GID
+  ansible.builtin.shell: "getent group video | cut -d: -f3"
+  register: host_video_gid
+  changed_when: false
+  delegate_to: "{{ inventory_hostname }}"
+  when: jellyfin_igpu_passthrough
+
+# Update container's /etc/group to match host GIDs for render and video
+- name: Sync render group GID in container to match host
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- sed -i 's/^render:x:[0-9]*:/render:x:{{ host_render_gid.stdout }}:/' /etc/group"
+  changed_when: false
+  when: jellyfin_igpu_passthrough and host_render_gid.stdout | length > 0
+
+- name: Sync video group GID in container to match host
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- sed -i 's/^video:x:[0-9]*:/video:x:{{ host_video_gid.stdout }}:/' /etc/group"
+  changed_when: false
+  when: jellyfin_igpu_passthrough and host_video_gid.stdout | length > 0
+
+# Ensure render group exists with correct GID (create if missing)
+- name: Create render group with correct GID if not exists
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- groupadd -g {{ host_render_gid.stdout }} render"
+  changed_when: false
+  failed_when: false
+  when: jellyfin_igpu_passthrough and host_render_gid.stdout | length > 0
+
+# Add jellyfin to render and video groups
+- name: Add jellyfin user to render group for GPU access
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- usermod -aG render jellyfin"
+  changed_when: false
+  when: jellyfin_igpu_passthrough
+
+- name: Add jellyfin user to video group for GPU access
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- usermod -aG video jellyfin"
+  changed_when: false
+  when: jellyfin_igpu_passthrough
+
+# Set proper permissions on GPU devices
+- name: Set GPU device ownership to video group
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- sh -c 'chgrp video /dev/dri && chmod 755 /dev/dri && chmod 660 /dev/dri/*'"
+  changed_when: false
+  failed_when: false
+  when: jellyfin_igpu_passthrough
+
+# NOTE: Do NOT chown the entire media directory - it breaks SABnzbd and other services
+# that expect files owned by UID 1000. Jellyfin only needs READ access to media files.
+# Only chown transcoding directory if needed.
+- name: Ensure transcoding directory exists and is owned by jellyfin
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- sh -c 'mkdir -p {{ jellyfin_mediapool_target }}/transcoding && chown jellyfin:jellyfin {{ jellyfin_mediapool_target }}/transcoding'"
+  changed_when: false
+  failed_when: false
+
+# Start/restart Jellyfin
+- name: Restart Jellyfin to apply group changes
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- systemctl restart jellyfin"
+  changed_when: false
+
+- name: Wait for Jellyfin to start
+  ansible.builtin.pause:
+    seconds: 15
+
+- name: Check Jellyfin service status
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- systemctl status jellyfin --no-pager"
+  register: jellyfin_status
+  changed_when: false
+  failed_when: false
+
+- name: Display Jellyfin status
+  ansible.builtin.debug:
+    msg: "Jellyfin service status: {{ 'running' if 'active (running)' in jellyfin_status.stdout else 'not running' }}"
+
+- name: Verify iGPU access
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- ls -la /dev/dri/"
+  register: dri_status
+  changed_when: false
+  when: jellyfin_igpu_passthrough
+
+- name: Display iGPU device status
+  ansible.builtin.debug:
+    msg: "{{ dri_status.stdout_lines }}"
+  when: jellyfin_igpu_passthrough and dri_status is defined

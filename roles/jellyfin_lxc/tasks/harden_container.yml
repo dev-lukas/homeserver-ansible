@@ -1,0 +1,77 @@
+---
+# Security hardening for Jellyfin LXC container (Debian)
+
+- name: Install OpenSSH server
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- apt-get install -y openssh-server"
+  changed_when: false
+
+- name: Disable root password login via SSH
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config"
+  changed_when: false
+
+- name: Disable password authentication for SSH
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config"
+  changed_when: false
+
+- name: Ensure SSH directory exists
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- mkdir -p /root/.ssh"
+  changed_when: false
+
+- name: Set SSH directory permissions
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- chmod 700 /root/.ssh"
+  changed_when: false
+
+- name: Copy SSH authorized keys to container
+  ansible.builtin.shell:
+    cmd: |
+      cat /root/.ssh/authorized_keys | pct exec {{ jellyfin_vmid }} -- tee /root/.ssh/authorized_keys > /dev/null
+  changed_when: false
+  failed_when: false
+
+- name: Set authorized_keys permissions
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- chmod 600 /root/.ssh/authorized_keys"
+  changed_when: false
+  failed_when: false
+
+- name: Enable SSH service on boot
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- systemctl enable ssh"
+  changed_when: false
+
+- name: Start SSH service
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- systemctl start ssh"
+  changed_when: false
+  failed_when: false
+
+- name: Configure sysctl security settings
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ jellyfin_vmid }} -- sh -c 'cat > /etc/sysctl.d/99-security.conf << EOF
+      # Ignore ICMP redirects
+      net.ipv4.conf.all.accept_redirects = 0
+      net.ipv6.conf.all.accept_redirects = 0
+      
+      # Ignore source-routed packets
+      net.ipv4.conf.all.accept_source_route = 0
+      net.ipv6.conf.all.accept_source_route = 0
+      
+      # Log martian packets
+      net.ipv4.conf.all.log_martians = 1
+      
+      # Enable SYN cookies
+      net.ipv4.tcp_syncookies = 1
+      EOF'
+  changed_when: false
+
+- name: Apply sysctl settings
+  ansible.builtin.command:
+    cmd: "pct exec {{ jellyfin_vmid }} -- sysctl -p /etc/sysctl.d/99-security.conf"
+  changed_when: false
+  failed_when: false

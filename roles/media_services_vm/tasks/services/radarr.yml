@@ -1,0 +1,36 @@
+---
+# Radarr - Movie management
+
+- name: Create Radarr stack directory
+  ansible.builtin.file:
+    path: "{{ media_services_stacks_dir }}/radarr/config"
+    state: directory
+    mode: "0755"
+
+- name: Deploy Radarr docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ media_services_stacks_dir }}/radarr/docker-compose.yml"
+    content: |
+      services:
+        radarr:
+          image: lscr.io/linuxserver/radarr:latest
+          container_name: radarr
+          restart: unless-stopped
+          ports:
+            - "{{ media_services_radarr_port }}:7878"
+          environment:
+            - PUID={{ media_services_puid }}
+            - PGID={{ media_services_pgid }}
+            - TZ={{ media_services_timezone }}
+          volumes:
+            - ./config:/config
+            - {{ media_services_nfs_mount }}/movies:/movies
+            - {{ media_services_nfs_mount }}/downloads:/downloads
+    mode: "0644"
+
+- name: Start Radarr stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ media_services_stacks_dir }}/radarr"
+  register: radarr_start
+  changed_when: "'Started' in radarr_start.stderr or 'Created' in radarr_start.stderr"

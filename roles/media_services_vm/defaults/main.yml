@@ -1,0 +1,55 @@
+---
+# Media Services VM role defaults
+
+# VM settings
+media_services_vmid: 106
+media_services_hostname: "media-services"
+media_services_storage: "vmpool"
+media_services_disk_size: "64"
+media_services_memory: 8192
+media_services_cores: 4
+
+# Cloud image settings
+media_services_cloud_image_url: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2"
+media_services_cloud_image_path: "/var/lib/vz/template/iso/debian-13-generic-amd64.qcow2"
+
+# Network configuration
+media_services_bridge: "vmbr0"
+media_services_ip: "192.168.178.11"
+media_services_gateway: "192.168.178.1"
+media_services_netmask: "24"
+media_services_nameserver: "192.168.178.2"
+
+# SSH settings
+media_services_ssh_port: 22
+
+# Docker settings
+media_services_stacks_dir: "/opt/stacks"
+media_services_docker_prune_schedule: "0 5 * * 0"
+
+# NFS mount
+media_services_nfs_server: "192.168.178.56"
+media_services_nfs_export: "/mediapool/media"
+media_services_nfs_mount: "/media"
+
+# VPN configuration
+media_services_vpn_service_provider: "protonvpn"
+media_services_vpn_type: "wireguard"
+
+# Service ports
+media_services_prowlarr_port: 9696
+media_services_sonarr_port: 8989
+media_services_radarr_port: 7878
+media_services_sabnzbd_port: 8080
+media_services_umlautadaptarr_port: 5006
+
+# UFW settings
+media_services_ufw_default_incoming: "deny"
+media_services_ufw_default_outgoing: "allow"
+
+# Timezone
+media_services_timezone: "Europe/Berlin"
+
+# User/Group IDs
+media_services_puid: 1000
+media_services_pgid: 1000

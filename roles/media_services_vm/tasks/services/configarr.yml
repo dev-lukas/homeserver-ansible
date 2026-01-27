@@ -1,0 +1,121 @@
+---
+# Configarr - TRaSH Guides configuration sync for Sonarr and Radarr
+# Profile configs are stored in ./configarr/ subdirectory
+
+- name: Create Configarr stack directory
+  ansible.builtin.file:
+    path: "{{ media_services_stacks_dir }}/configarr/config"
+    state: directory
+    owner: "{{ media_services_puid }}"
+    group: "{{ media_services_pgid }}"
+    mode: "0755"
+
+- name: Create Configarr custom formats directory
+  ansible.builtin.file:
+    path: "{{ media_services_stacks_dir }}/configarr/config/cfs"
+    state: directory
+    owner: "{{ media_services_puid }}"
+    group: "{{ media_services_pgid }}"
+    mode: "0755"
+
+- name: Create Configarr templates directory
+  ansible.builtin.file:
+    path: "{{ media_services_stacks_dir }}/configarr/config/templates"
+    state: directory
+    owner: "{{ media_services_puid }}"
+    group: "{{ media_services_pgid }}"
+    mode: "0755"
+
+- name: Copy custom format files
+  ansible.builtin.copy:
+    src: "configarr/cfs/"
+    dest: "{{ media_services_stacks_dir }}/configarr/config/cfs/"
+    owner: "{{ media_services_puid }}"
+    group: "{{ media_services_pgid }}"
+    mode: "0644"
+
+- name: Copy template files
+  ansible.builtin.copy:
+    src: "configarr/templates/"
+    dest: "{{ media_services_stacks_dir }}/configarr/config/templates/"
+    owner: "{{ media_services_puid }}"
+    group: "{{ media_services_pgid }}"
+    mode: "0644"
+
+- name: Deploy Configarr docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ media_services_stacks_dir }}/configarr/docker-compose.yml"
+    content: |
+      services:
+        configarr:
+          image: configarr/configarr:latest
+          container_name: configarr
+          restart: "no"
+          user: "{{ media_services_puid }}:{{ media_services_pgid }}"
+          environment:
+            - TZ={{ media_services_timezone }}
+          volumes:
+            - ./config:/app/config
+            - ./repos:/app/repos
+            - ./config/cfs:/app/cfs
+            - ./config/templates:/app/templates
+    mode: "0644"
+
+- name: Create Configarr secrets file
+  ansible.builtin.copy:
+    dest: "{{ media_services_stacks_dir }}/configarr/config/secrets.yml"
+    content: |
+      SONARR_API_KEY: {{ vault_sonarr_api_key | default('YOUR_SONARR_API_KEY') }}
+      RADARR_API_KEY: {{ vault_radarr_api_key | default('YOUR_RADARR_API_KEY') }}
+    owner: "{{ media_services_puid }}"
+    group: "{{ media_services_pgid }}"
+    mode: "0600"
+
+- name: Read Radarr profiles
+  ansible.builtin.set_fact:
+    radarr_profiles: "{{ lookup('template', 'configarr/radarr.yml') }}"
+
+- name: Read Sonarr profiles
+  ansible.builtin.set_fact:
+    sonarr_profiles: "{{ lookup('template', 'configarr/sonarr.yml') }}"
+
+- name: Create Configarr main config
+  ansible.builtin.copy:
+    dest: "{{ media_services_stacks_dir }}/configarr/config/config.yml"
+    content: |
+      # Configarr Configuration
+      # Auto-generated from roles/media_services_vm/tasks/services/configarr/
+      
+      # Custom formats and templates paths
+      localCustomFormatsPath: /app/cfs
+      localConfigTemplatesPath: /app/templates
+      
+      radarr:
+      {{ radarr_profiles | indent(2, first=True) }}
+      
+      sonarr:
+      {{ sonarr_profiles | indent(2, first=True) }}
+    owner: "{{ media_services_puid }}"
+    group: "{{ media_services_pgid }}"
+    mode: "0644"
+    force: true
+
+- name: Create repos directory for Configarr
+  ansible.builtin.file:
+    path: "{{ media_services_stacks_dir }}/configarr/repos"
+    state: directory
+    owner: "{{ media_services_puid }}"
+    group: "{{ media_services_pgid }}"
+    mode: "0755"
+
+- name: Run Configarr once to sync profiles
+  ansible.builtin.command:
+    cmd: docker compose run --rm configarr
+    chdir: "{{ media_services_stacks_dir }}/configarr"
+  register: configarr_run
+  changed_when: true
+  failed_when: false
+
+- name: Display Configarr output
+  ansible.builtin.debug:
+    msg: "{{ configarr_run.stdout_lines | default(['Configarr executed']) }}"

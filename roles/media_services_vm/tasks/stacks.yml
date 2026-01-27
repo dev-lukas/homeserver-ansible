@@ -1,0 +1,50 @@
+---
+# Deploy Docker Compose stacks for all *arr services
+
+# Deploy services in order: VPN first, then dependents
+- name: Deploy Gluetun VPN
+  ansible.builtin.include_tasks: services/gluetun.yml
+
+- name: Deploy Prowlarr
+  ansible.builtin.include_tasks: services/prowlarr.yml
+
+- name: Deploy Sonarr
+  ansible.builtin.include_tasks: services/sonarr.yml
+
+- name: Deploy Radarr
+  ansible.builtin.include_tasks: services/radarr.yml
+
+- name: Deploy SABnzbd
+  ansible.builtin.include_tasks: services/sabnzbd.yml
+
+- name: Deploy Configarr
+  ansible.builtin.include_tasks: services/configarr.yml
+
+- name: Deploy Umlautadaptarr
+  ansible.builtin.include_tasks: services/umlautadaptarr.yml
+
+# Verification tasks
+- name: Wait for services to start
+  ansible.builtin.pause:
+    seconds: 30
+
+- name: Verify all containers are running
+  ansible.builtin.command:
+    cmd: docker ps --format 'table {{"{{"}} .Names {{"}}"}}\t{{"{{"}} .Status {{"}}"}}\t{{"{{"}} .Ports {{"}}"}}'
+  register: docker_ps
+  changed_when: false
+
+- name: Display running containers
+  ansible.builtin.debug:
+    msg: "{{ docker_ps.stdout_lines }}"
+
+- name: Verify VPN connectivity
+  ansible.builtin.command:
+    cmd: docker exec gluetun wget -qO- https://ipinfo.io/ip
+  register: vpn_ip
+  changed_when: false
+  failed_when: false
+
+- name: Display VPN IP
+  ansible.builtin.debug:
+    msg: "VPN exit IP: {{ vpn_ip.stdout | default('Could not determine VPN IP') }}"

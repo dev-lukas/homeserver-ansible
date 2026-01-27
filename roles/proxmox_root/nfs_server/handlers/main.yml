@@ -1,0 +1,11 @@
+---
+# Handlers for NFS server role
+
+- name: Reload NFS exports
+  ansible.builtin.command:
+    cmd: exportfs -ra
+
+- name: Restart NFS server
+  ansible.builtin.systemd:
+    name: nfs-kernel-server
+    state: restarted
