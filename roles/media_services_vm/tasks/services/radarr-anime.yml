@@ -1,0 +1,36 @@
+---
+# Radarr Anime - Anime movie management
+
+- name: Create Radarr Anime stack directory
+  ansible.builtin.file:
+    path: "{{ media_services_stacks_dir }}/radarr-anime/config"
+    state: directory
+    mode: "0755"
+
+- name: Deploy Radarr Anime docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ media_services_stacks_dir }}/radarr-anime/docker-compose.yml"
+    content: |
+      services:
+        radarr-anime:
+          image: lscr.io/linuxserver/radarr:latest
+          container_name: radarr-anime
+          restart: unless-stopped
+          ports:
+            - "{{ media_services_radarr_anime_port }}:7878"
+          environment:
+            - PUID={{ media_services_puid }}
+            - PGID={{ media_services_pgid }}
+            - TZ={{ media_services_timezone }}
+          volumes:
+            - ./config:/config
+            - {{ media_services_nfs_mount }}/anime-movies:/movies
+            - {{ media_services_nfs_mount }}/downloads:/downloads
+    mode: "0644"
+
+- name: Start Radarr Anime stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ media_services_stacks_dir }}/radarr-anime"
+  register: radarr_anime_start
+  changed_when: "'Started' in radarr_anime_start.stderr or 'Created' in radarr_anime_start.stderr"

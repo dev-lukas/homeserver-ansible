@@ -14,8 +14,17 @@
 - name: Deploy Radarr
   ansible.builtin.include_tasks: services/radarr.yml
 
+- name: Deploy Sonarr Anime
+  ansible.builtin.include_tasks: services/sonarr-anime.yml
+
+- name: Deploy Radarr Anime
+  ansible.builtin.include_tasks: services/radarr-anime.yml
+
 - name: Deploy SABnzbd
   ansible.builtin.include_tasks: services/sabnzbd.yml
+
+- name: Deploy qBittorrent
+  ansible.builtin.include_tasks: services/qbittorrent.yml
 
 - name: Deploy Configarr
   ansible.builtin.include_tasks: services/configarr.yml

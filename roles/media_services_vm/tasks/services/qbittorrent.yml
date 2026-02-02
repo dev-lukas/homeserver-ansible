@@ -1,0 +1,36 @@
+---
+# qBittorrent - Torrent downloader (routed via Gluetun VPN)
+
+- name: Create qBittorrent stack directory
+  ansible.builtin.file:
+    path: "{{ media_services_stacks_dir }}/qbittorrent/config"
+    state: directory
+    mode: "0755"
+
+- name: Deploy qBittorrent docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ media_services_stacks_dir }}/qbittorrent/docker-compose.yml"
+    content: |
+      services:
+        qbittorrent:
+          image: lscr.io/linuxserver/qbittorrent:latest
+          container_name: qbittorrent
+          restart: unless-stopped
+          # Route all traffic through Gluetun VPN (acts as kill-switch)
+          network_mode: "container:gluetun"
+          environment:
+            - PUID={{ media_services_puid }}
+            - PGID={{ media_services_pgid }}
+            - TZ={{ media_services_timezone }}
+            - WEBUI_PORT=8081
+          volumes:
+            - ./config:/config
+            - {{ media_services_nfs_mount }}/downloads:/downloads
+    mode: "0644"
+
+- name: Start qBittorrent stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ media_services_stacks_dir }}/qbittorrent"
+  register: qbittorrent_start
+  changed_when: "'Started' in qbittorrent_start.stderr or 'Created' in qbittorrent_start.stderr"

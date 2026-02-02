@@ -40,7 +40,10 @@ media_services_vpn_type: "wireguard"
 media_services_prowlarr_port: 9696
 media_services_sonarr_port: 8989
 media_services_radarr_port: 7878
+media_services_sonarr_anime_port: 8990
+media_services_radarr_anime_port: 7879
 media_services_sabnzbd_port: 8080
+media_services_qbittorrent_port: 8081
 media_services_umlautadaptarr_port: 5006
 
 # UFW settings

@@ -1,0 +1,36 @@
+---
+# Sonarr Anime - Anime TV show management
+
+- name: Create Sonarr Anime stack directory
+  ansible.builtin.file:
+    path: "{{ media_services_stacks_dir }}/sonarr-anime/config"
+    state: directory
+    mode: "0755"
+
+- name: Deploy Sonarr Anime docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ media_services_stacks_dir }}/sonarr-anime/docker-compose.yml"
+    content: |
+      services:
+        sonarr-anime:
+          image: lscr.io/linuxserver/sonarr:latest
+          container_name: sonarr-anime
+          restart: unless-stopped
+          ports:
+            - "{{ media_services_sonarr_anime_port }}:8989"
+          environment:
+            - PUID={{ media_services_puid }}
+            - PGID={{ media_services_pgid }}
+            - TZ={{ media_services_timezone }}
+          volumes:
+            - ./config:/config
+            - {{ media_services_nfs_mount }}/anime:/tv
+            - {{ media_services_nfs_mount }}/downloads:/downloads
+    mode: "0644"
+
+- name: Start Sonarr Anime stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ media_services_stacks_dir }}/sonarr-anime"
+  register: sonarr_anime_start
+  changed_when: "'Started' in sonarr_anime_start.stderr or 'Created' in sonarr_anime_start.stderr"

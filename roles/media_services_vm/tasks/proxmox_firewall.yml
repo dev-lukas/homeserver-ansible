@@ -36,8 +36,17 @@
       # Radarr
       IN ACCEPT -p tcp -dport {{ media_services_radarr_port }} -log nolog
 
+      # Sonarr Anime
+      IN ACCEPT -p tcp -dport {{ media_services_sonarr_anime_port }} -log nolog
+
+      # Radarr Anime
+      IN ACCEPT -p tcp -dport {{ media_services_radarr_anime_port }} -log nolog
+
       # SABnzbd
       IN ACCEPT -p tcp -dport {{ media_services_sabnzbd_port }} -log nolog
+
+      # qBittorrent
+      IN ACCEPT -p tcp -dport {{ media_services_qbittorrent_port }} -log nolog
 
       # Umlautadaptarr
       IN ACCEPT -p tcp -dport {{ media_services_umlautadaptarr_port }} -log nolog

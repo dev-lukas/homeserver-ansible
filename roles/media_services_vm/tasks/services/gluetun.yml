@@ -38,7 +38,9 @@
             - "{{ media_services_prowlarr_port }}:9696"
             # SABnzbd via Gluetun
             - "{{ media_services_sabnzbd_port }}:8080"
-            # Umlautadaptarr via Gluetun (proxy mode uses 5006)
+            # qBittorrent via Gluetun
+            - "{{ media_services_qbittorrent_port }}:8081"
+            # Umlautadaptarr via Gluetun
             - "{{ media_services_umlautadaptarr_port }}:5006"
           volumes:
             - ./config:/gluetun
@@ -50,6 +52,19 @@
             start_period: 30s
     mode: "0644"
 
+# Stop containers that will use gluetun's network to free up ports
+# This ensures idempotent deployment when switching network modes
+- name: Stop containers that use Gluetun network (to free ports)
+  ansible.builtin.shell:
+    cmd: docker stop {{ item }} && docker rm {{ item }}
+  loop:
+    - prowlarr
+    - sabnzbd
+    - qbittorrent
+    - umlautadaptarr
+  failed_when: false
+  changed_when: false
+
 - name: Start Gluetun stack
   ansible.builtin.command:
     cmd: docker compose up -d
@@ -57,6 +72,33 @@
   register: gluetun_start
   changed_when: "'Started' in gluetun_start.stderr or 'Created' in gluetun_start.stderr"
 
-- name: Wait for Gluetun VPN to establish connection
-  ansible.builtin.pause:
-    seconds: 30
+- name: Wait for Gluetun container to be running
+  ansible.builtin.shell:
+    cmd: |
+      for i in $(seq 1 60); do
+        STATUS=$(docker inspect -f '{{ '{{' }}.State.Status{{ '}}' }}' gluetun 2>/dev/null)
+        if [ "$STATUS" = "running" ]; then
+          # Additional wait for VPN to establish
+          sleep 10
+          exit 0
+        fi
+        sleep 2
+      done
+      exit 1
+  changed_when: false
+
+# When Gluetun is recreated, containers using network_mode: container:gluetun
+# lose their network namespace reference and must be recreated (not just restarted)
+- name: Recreate containers dependent on Gluetun network
+  ansible.builtin.shell:
+    cmd: docker compose up -d --force-recreate
+    chdir: "{{ media_services_stacks_dir }}/{{ item }}"
+  loop:
+    - prowlarr
+    - sabnzbd
+    - qbittorrent
+    - umlautadaptarr
+  when: gluetun_start.changed
+  register: recreate_result
+  failed_when: false
+  changed_when: "'Recreated' in recreate_result.stderr or 'Created' in recreate_result.stderr"
