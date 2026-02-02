@@ -44,12 +44,33 @@
     proto: tcp
     comment: "Radarr"
 
+- name: Allow Sonarr Anime port through UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ media_services_sonarr_anime_port }}"
+    proto: tcp
+    comment: "Sonarr Anime"
+
+- name: Allow Radarr Anime port through UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ media_services_radarr_anime_port }}"
+    proto: tcp
+    comment: "Radarr Anime"
+
 - name: Allow SABnzbd port through UFW
   community.general.ufw:
     rule: allow
     port: "{{ media_services_sabnzbd_port }}"
     proto: tcp
     comment: "SABnzbd"
+
+- name: Allow qBittorrent port through UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ media_services_qbittorrent_port }}"
+    proto: tcp
+    comment: "qBittorrent"
 
 - name: Allow Umlautadaptarr port through UFW
   community.general.ufw:

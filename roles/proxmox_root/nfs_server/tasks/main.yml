@@ -28,6 +28,8 @@
   loop:
     - /mediapool/media/tv
     - /mediapool/media/movies
+    - /mediapool/media/anime
+    - /mediapool/media/anime-movies
     - /mediapool/media/downloads
     - /mediapool/media/downloads/incomplete
 

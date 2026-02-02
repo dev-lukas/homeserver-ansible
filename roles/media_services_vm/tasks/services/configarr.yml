@@ -67,6 +67,8 @@
     content: |
       SONARR_API_KEY: {{ vault_sonarr_api_key | default('YOUR_SONARR_API_KEY') }}
       RADARR_API_KEY: {{ vault_radarr_api_key | default('YOUR_RADARR_API_KEY') }}
+      SONARR_ANIME_API_KEY: {{ vault_sonarr_anime_api_key | default('YOUR_SONARR_ANIME_API_KEY') }}
+      RADARR_ANIME_API_KEY: {{ vault_radarr_anime_api_key | default('YOUR_RADARR_ANIME_API_KEY') }}
     owner: "{{ media_services_puid }}"
     group: "{{ media_services_pgid }}"
     mode: "0600"

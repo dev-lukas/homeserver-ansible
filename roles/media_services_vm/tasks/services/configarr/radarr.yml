@@ -5,13 +5,13 @@
 instance1:
   base_url: http://{{ media_services_ip }}:7878
   api_key: !secret RADARR_API_KEY
-  
+
   # Delete profiles/formats not managed by Configarr
   delete_unmanaged_custom_formats:
     enabled: true
   delete_unmanaged_quality_profiles:
     enabled: true
-  
+
   # Clone profiles for Special Edition movies
   cloneQualityProfiles:
     - from: Remux + WEB 2160p (GER)
@@ -20,31 +20,24 @@ instance1:
       to: Special Edition 4K (GER)
     - from: HD Bluray + WEB (GER)
       to: Special Edition 1080p (GER)
-  
+
   # Include all required templates
   include:
     # Quality definitions
     - template: radarr-quality-definition-movie
-    
+
     # German HD (1080p)
     - template: radarr-custom-formats-hd-bluray-web-german
     - template: radarr-quality-profile-hd-bluray-web-german
-    
+
     # German UHD Bluray + WEB (4K encode)
     - template: radarr-custom-formats-uhd-bluray-web-german
     - template: radarr-quality-profile-uhd-bluray-web-german
-    
+
     # German UHD Remux + WEB (4K remux)
     - template: radarr-custom-formats-uhd-remux-web-german
     - template: radarr-quality-profile-uhd-remux-web-german
-    
-    # German Anime (custom template - WEBDL-720p only)
-    - template: template-radarr-anime-german
-    
-    # English Anime
-    - template: radarr-custom-formats-anime
-    - template: radarr-quality-profile-anime
-  
+
   # Custom format assignments (templates handle quality_profiles)
   custom_formats:
     #==========================================================================
@@ -60,9 +53,7 @@ instance1:
         - name: HD Bluray + WEB (GER)
         - name: UHD Bluray + WEB (GER)
         - name: Remux + WEB 2160p (GER)
-        - name: Anime HD (GER)
-        - name: Remux-1080p - Anime
-    
+
     #==========================================================================
     # HDR / DV - Block DV without HDR fallback (all UHD/Remux)
     #==========================================================================
@@ -71,7 +62,7 @@ instance1:
       assign_scores_to:
         - name: UHD Bluray + WEB (GER)
         - name: Remux + WEB 2160p (GER)
-    
+
     #==========================================================================
     # x265 - Allow for UHD and Remux profiles
     #==========================================================================
@@ -80,7 +71,7 @@ instance1:
       assign_scores_to:
         - name: UHD Bluray + WEB (GER)
         - name: Remux + WEB 2160p (GER)
-    
+
     #==========================================================================
     # 4K REMASTER - Prefer for UHD profiles
     #==========================================================================
@@ -89,7 +80,7 @@ instance1:
       assign_scores_to:
         - name: UHD Bluray + WEB (GER)
         - name: Remux + WEB 2160p (GER)
-    
+
     #==========================================================================
     # IMAX ENHANCED - Prefer for HD/WEB-DL profiles
     #==========================================================================
@@ -100,7 +91,7 @@ instance1:
         - name: HD Bluray + WEB (GER)
         - name: UHD Bluray + WEB (GER)
         - name: Remux + WEB 2160p (GER)
-    
+
     #==========================================================================
     # SPECIAL EDITION - Apply to all cloned Special Edition profiles
     #==========================================================================
@@ -113,12 +104,41 @@ instance1:
           score: 25000
         - name: Special Edition 1080p (GER)
           score: 25000
-    
-    #==========================================================================
-    # x265 - Prefer for Anime (smaller files, good quality)
-    #==========================================================================
+
+# Anime instance - separate from main Radarr
+anime:
+  base_url: http://{{ media_services_ip }}:7879
+  api_key: !secret RADARR_ANIME_API_KEY
+
+  delete_unmanaged_custom_formats:
+    enabled: true
+  delete_unmanaged_quality_profiles:
+    enabled: true
+
+  include:
+    # Anime-specific quality definitions (permissive file sizes per Trash Guides)
+    - template: radarr-quality-definition-anime
+    - template: radarr-custom-formats-anime
+    - template: radarr-quality-profile-anime
+    # German anime support
+    - template: template-radarr-anime-german
+
+  custom_formats:
+    # BAD RELEASE GROUPS
+    - trash_ids:
+        - b6832f586342ef70d9c128d40c07b872 # Bad Dual Groups
+        - ae9b7c9ebde1f3bd336a8cbd1ec4c5e5 # No-RlsGroup
+        - 7357cf5161efbf8c4d5d0c30b4815ee2 # Obfuscated
+        - 5c44f52a8714fdd79bb4d98e2673be1f # Retags
+        - f537cf427b64c38c8e36298f657e4828 # Scene
+      assign_scores_to:
+        - name: Anime HD (GER)
+
+    # x265 - Prefer for Anime
     - trash_ids:
         - 839bea857ed2c0a8e084f3cbdbd65ecb # x265 (HD)
       assign_scores_to:
         - name: Anime HD (GER)
-          score: 300
+          score: 600
+        - name: Remux-1080p - Anime
+          score: 600

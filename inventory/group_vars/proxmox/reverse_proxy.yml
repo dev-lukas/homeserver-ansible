@@ -95,13 +95,13 @@ reverse_proxy_backends:
     subdomain: "sonarr"
     backend_host: "192.168.178.11"
     backend_port: 8989
-    websocket: false
+    websocket: true
     internal_only: true
   - name: "radarr"
     subdomain: "radarr"
     backend_host: "192.168.178.11"
     backend_port: 7878
-    websocket: false
+    websocket: true
     internal_only: true
   - name: "prowlarr"
     subdomain: "prowlarr"
@@ -114,4 +114,22 @@ reverse_proxy_backends:
     backend_host: "192.168.178.11"
     backend_port: 8080
     websocket: false
+    internal_only: true
+  - name: "qbittorrent"
+    subdomain: "qbit"
+    backend_host: "192.168.178.11"
+    backend_port: 8081
+    websocket: false
+    internal_only: true
+  - name: "sonarr-anime"
+    subdomain: "sonarr-anime"
+    backend_host: "192.168.178.11"
+    backend_port: 8990
+    websocket: true
+    internal_only: true
+  - name: "radarr-anime"
+    subdomain: "radarr-anime"
+    backend_host: "192.168.178.11"
+    backend_port: 7879
+    websocket: true
     internal_only: true

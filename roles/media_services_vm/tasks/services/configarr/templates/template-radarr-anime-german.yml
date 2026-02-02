@@ -15,6 +15,7 @@ quality_profiles:
     qualities:
       - name: Merged QPs
         qualities:
+          - Remux-1080p
           - Bluray-1080p
           - WEBDL-1080p
           - WEBRip-1080p
