@@ -30,6 +30,7 @@
     - /mediapool/media/movies
     - /mediapool/media/anime
     - /mediapool/media/anime-movies
+    - /mediapool/media/documentaries
     - /mediapool/media/downloads
     - /mediapool/media/downloads/incomplete
 
