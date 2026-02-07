@@ -25,6 +25,7 @@
           volumes:
             - ./config:/config
             - {{ media_services_nfs_mount }}/tv:/tv
+            - {{ media_services_nfs_mount }}/documentaries:/documentaries
             - {{ media_services_nfs_mount }}/downloads:/downloads
     mode: "0644"
 
