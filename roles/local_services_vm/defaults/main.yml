@@ -48,10 +48,8 @@ local_services_ufw_default_outgoing: "allow"
 # Homepage configuration
 homepage_proxmox_ip: "192.168.178.56"
 homepage_storage_mounts:
-  - name: "Root"
-    mount: "/"
-  - name: "VM Pool"
-    mount: "/vmpool"
+  - name: "Mediapool"
+    mount: "/mediapool"
 
 # Background image URL (will be downloaded locally)
 # Set to empty string to disable

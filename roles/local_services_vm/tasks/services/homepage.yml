@@ -26,6 +26,94 @@
     state: directory
     mode: "0755"
 
+- name: Create Homepage ZPool API directories
+  ansible.builtin.file:
+    path: "{{ local_services_stacks_dir }}/homepage/api/proxmox-zpool/api/4"
+    state: directory
+    mode: "0755"
+
+- name: Deploy Homepage ZPool adapter script
+  ansible.builtin.copy:
+    dest: "{{ local_services_stacks_dir }}/homepage/api/update_zpool_fs.py"
+    mode: "0755"
+    content: |
+      #!/usr/bin/env python3
+      import json
+      import os
+      import tempfile
+      import urllib.request
+
+      AMPS_URL = "http://{{ homepage_proxmox_ip }}:{{ glances_port }}/api/4/amps"
+      OUTPUT_PATH = "{{ local_services_stacks_dir }}/homepage/api/proxmox-zpool/api/4/fs"
+
+      def parse_amp_result(result):
+          if not result:
+              return None
+
+          cols = result.strip().split()
+          if len(cols) < 8:
+              return None
+
+          name = cols[0]
+          size = int(cols[1])
+          used = int(cols[2])
+          free = int(cols[3])
+          percent = float(cols[7])
+
+          return {
+              "device_name": name,
+              "fs_type": "zfs",
+              "mnt_point": f"/{name}",
+              "options": "",
+              "size": size,
+              "used": used,
+              "free": free,
+              "percent": percent,
+              "key": "mnt_point",
+          }
+
+      def main():
+          with urllib.request.urlopen(AMPS_URL, timeout=5) as response:
+              amps = json.load(response)
+
+          wanted = {
+              "Zpool_rpool": None,
+              "Zpool_vmpool": None,
+          }
+
+          for amp in amps:
+              name = amp.get("name")
+              if name in wanted:
+                  wanted[name] = parse_amp_result(amp.get("result"))
+
+          fs_items = [item for item in wanted.values() if item is not None]
+
+          os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+          fd, tmp_path = tempfile.mkstemp(prefix="zpool-fs-", dir=os.path.dirname(OUTPUT_PATH))
+          try:
+              with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+                  json.dump(fs_items, tmp_file)
+              os.replace(tmp_path, OUTPUT_PATH)
+          finally:
+              if os.path.exists(tmp_path):
+                  os.remove(tmp_path)
+
+      if __name__ == "__main__":
+          main()
+
+- name: Update Homepage ZPool API data now
+  ansible.builtin.command:
+    cmd: python3 {{ local_services_stacks_dir }}/homepage/api/update_zpool_fs.py
+  changed_when: false
+  failed_when: false
+
+- name: Schedule Homepage ZPool API refresh
+  ansible.builtin.cron:
+    name: "homepage_zpool_fs_refresh"
+    minute: "*"
+    user: root
+    job: "python3 {{ local_services_stacks_dir }}/homepage/api/update_zpool_fs.py >/dev/null 2>&1"
+
 - name: Deploy Homepage docker-compose.yml
   ansible.builtin.copy:
     dest: "{{ local_services_stacks_dir }}/homepage/docker-compose.yml"
@@ -43,7 +131,7 @@
             - ./api:/app/public/api
           environment:
             - TZ=Europe/Berlin
-            - HOMEPAGE_ALLOWED_HOSTS=home.{{ reverse_proxy_domain }}
+            - HOMEPAGE_ALLOWED_HOSTS=home.{{ reverse_proxy_domain }},localhost,127.0.0.1,{{ local_services_ip }}
     mode: "0644"
 
 - name: Deploy Homepage settings.yaml
@@ -67,10 +155,13 @@
             columns: 5
         - Storage:
             style: row
-            columns: {{ homepage_storage_mounts | length }}
+            columns: {{ (homepage_storage_mounts | length) + 2 }}
         - Local Services:
             style: row
             columns: 3
+        - Media Services:
+            style: row
+            columns: 4
         - Infrastructure:
             style: row
             columns: 3
@@ -127,6 +218,18 @@
                 version: 4
                 metric: "fs:{{ storage.mount }}"
       {% endfor %}
+          - Root:
+              widget:
+                type: glances
+                url: http://localhost:3000/api/proxmox-zpool
+                version: 4
+                metric: "fs:/rpool"
+          - VM Pool:
+              widget:
+                type: glances
+                url: http://localhost:3000/api/proxmox-zpool
+                version: 4
+                metric: "fs:/vmpool"
 
       - Local Services:
           - BentoPDF:
@@ -141,6 +244,40 @@
               icon: mdi-silverware-fork-knife
               href: https://recipes.{{ reverse_proxy_domain }}
               description: Recipe manager
+
+      - Media Services:
+          - Jellyfin:
+              icon: mdi-play-circle
+              href: https://watch.{{ reverse_proxy_domain }}
+              description: Media streaming
+          - Sonarr:
+              icon: mdi-television-classic
+              href: https://sonarr.{{ reverse_proxy_domain }}
+              description: TV series management
+          - Radarr:
+              icon: mdi-movie-open
+              href: https://radarr.{{ reverse_proxy_domain }}
+              description: Movie management
+          - Prowlarr:
+              icon: mdi-radar
+              href: https://prowlarr.{{ reverse_proxy_domain }}
+              description: Indexer manager
+          - SABnzbd:
+              icon: mdi-download-network
+              href: https://sabnzbd.{{ reverse_proxy_domain }}
+              description: Usenet downloader
+          - qBittorrent:
+              icon: mdi-download-circle
+              href: https://qbit.{{ reverse_proxy_domain }}
+              description: Torrent client
+          - Sonarr Anime:
+              icon: mdi-television-guide
+              href: https://sonarr-anime.{{ reverse_proxy_domain }}
+              description: Anime series management
+          - Radarr Anime:
+              icon: mdi-animation-play
+              href: https://radarr-anime.{{ reverse_proxy_domain }}
+              description: Anime movie management
 
       - Infrastructure:
           - Home Assistant:
