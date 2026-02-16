@@ -35,6 +35,70 @@
     virtualenv: "{{ glances_venv_path }}"
     state: present
 
+- name: Ensure Glances config directory exists
+  ansible.builtin.file:
+    path: /etc/glances
+    state: directory
+    mode: "0755"
+
+- name: Configure Glances to allow ZFS filesystems
+  ansible.builtin.ini_file:
+    path: /etc/glances/glances.conf
+    section: fs
+    option: allow
+    value: zfs
+    mode: "0644"
+    create: true
+  notify: Restart glances
+
+- name: Ensure Glances AMPs plugin is enabled
+  ansible.builtin.ini_file:
+    path: /etc/glances/glances.conf
+    section: amps
+    option: disable
+    value: "False"
+    mode: "0644"
+    create: true
+  notify: Restart glances
+
+- name: Configure Glances AMP for rpool true utilization
+  ansible.builtin.ini_file:
+    path: /etc/glances/glances.conf
+    section: amp_zpool_rpool
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    mode: "0644"
+    create: true
+  loop:
+    - option: enable
+      value: "true"
+    - option: refresh
+      value: "30"
+    - option: one_line
+      value: "true"
+    - option: command
+      value: "zpool list -Hp rpool"
+  notify: Restart glances
+
+- name: Configure Glances AMP for vmpool true utilization
+  ansible.builtin.ini_file:
+    path: /etc/glances/glances.conf
+    section: amp_zpool_vmpool
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    mode: "0644"
+    create: true
+  loop:
+    - option: enable
+      value: "true"
+    - option: refresh
+      value: "30"
+    - option: one_line
+      value: "true"
+    - option: command
+      value: "zpool list -Hp vmpool"
+  notify: Restart glances
+
 - name: Create Glances systemd service
   ansible.builtin.copy:
     dest: /etc/systemd/system/glances.service
@@ -45,7 +109,7 @@
 
       [Service]
       Type=simple
-      ExecStart={{ glances_venv_path }}/bin/glances -w -B 0.0.0.0 -p {{ glances_port }}
+      ExecStart={{ glances_venv_path }}/bin/glances -C /etc/glances/glances.conf -w -B 0.0.0.0 -p {{ glances_port }}
       Restart=on-failure
       RestartSec=5
 

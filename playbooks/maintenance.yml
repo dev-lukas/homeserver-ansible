@@ -7,6 +7,9 @@
   hosts: proxmox-root
   gather_facts: false
   tags: [proxmox, maintenance]
+  vars:
+    glances_venv_path: "{{ hostvars['proxmox-root']['glances_venv_path'] | default('/opt/glances') }}"
+    glances_port: "{{ hostvars['proxmox-root']['glances_port'] | default(61208) }}"
   pre_tasks:
     - name: Write deploy key to temp file
       ansible.builtin.copy:
@@ -40,12 +43,56 @@
         path: /var/run/reboot-required
       register: reboot_required
 
+    - name: Check if Glances venv exists
+      ansible.builtin.stat:
+        path: "{{ glances_venv_path }}/bin/pip"
+      register: glances_venv
+
+    - name: Update Glances in venv
+      ansible.builtin.pip:
+        name:
+          - glances[web]
+        state: latest
+        virtualenv: "{{ glances_venv_path }}"
+      register: glances_update
+      when: glances_venv.stat.exists
+
+    - name: Restart Glances if updated
+      ansible.builtin.systemd:
+        name: glances
+        state: restarted
+      when:
+        - glances_venv.stat.exists
+        - glances_update is defined
+        - glances_update.changed
+
+    - name: Verify Glances API is reachable
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ glances_port }}/api/4/status"
+        method: GET
+        status_code: [200]
+      register: glances_health
+      retries: 3
+      delay: 5
+      until: glances_health.status == 200
+      when: glances_venv.stat.exists
+
+    - name: Set Glances maintenance status
+      ansible.builtin.set_fact:
+        glances_maintenance_status: >-
+          {{
+            'updated' if (glances_venv.stat.exists and glances_update is defined and glances_update.changed)
+            else 'up-to-date' if glances_venv.stat.exists
+            else 'not-installed'
+          }}
+
     - name: Display update summary
       ansible.builtin.debug:
         msg: |
           Proxmox host updated.
           Packages upgraded: {{ apt_upgrade.changed }}
           Reboot required: {{ reboot_required.stat.exists | default(false) }}
+          Glances status: {{ glances_maintenance_status | default('not-checked') }}
 
 - name: Maintenance - AdGuard LXC
   hosts: proxmox-root
@@ -201,3 +248,5 @@
       become: false
       run_once: true
       tags: always
+
+- import_playbook: reverse_proxy_verify.yml

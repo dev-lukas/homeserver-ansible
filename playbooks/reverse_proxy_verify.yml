@@ -1,0 +1,300 @@
+---
+# Reverse Proxy verification playbook
+# Usage: ansible-playbook playbooks/reverse_proxy_verify.yml --ask-vault-pass
+
+- name: Verify Reverse Proxy and safety mechanisms
+  hosts: proxmox-root
+  gather_facts: false
+  tags: [reverse_proxy, verify, maintenance]
+  pre_tasks:
+    - name: Write deploy key to temp file
+      ansible.builtin.copy:
+        content: "{{ vault_ansible_deploy_private_key }}"
+        dest: /tmp/.ansible_deploy_key
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      no_log: true
+      tags: always
+
+  vars:
+    reverse_proxy_vmid: "{{ hostvars['proxmox-root']['reverse_proxy_vmid'] | default(103) }}"
+    reverse_proxy_domain: "{{ hostvars['proxmox-root']['reverse_proxy_domain'] | default('lukas-roth.dev') }}"
+    reverse_proxy_http_port: "{{ hostvars['proxmox-root']['reverse_proxy_http_port'] | default(80) }}"
+    reverse_proxy_https_port: "{{ hostvars['proxmox-root']['reverse_proxy_https_port'] | default(443) }}"
+    reverse_proxy_ssh_port: "{{ hostvars['proxmox-root']['reverse_proxy_ssh_port'] | default(22) }}"
+    reverse_proxy_internal_subnet: "{{ hostvars['proxmox-root']['reverse_proxy_internal_subnet'] | default('192.168.178.0/24') }}"
+    reverse_proxy_backends: "{{ hostvars['proxmox-root']['reverse_proxy_backends'] | default([]) }}"
+
+  tasks:
+    - name: Check reverse proxy container status
+      ansible.builtin.command:
+        cmd: "pct status {{ reverse_proxy_vmid }}"
+      register: container_status
+      changed_when: false
+
+    - name: Assert reverse proxy container is running
+      ansible.builtin.assert:
+        that:
+          - "'running' in container_status.stdout"
+        fail_msg: "Reverse proxy container {{ reverse_proxy_vmid }} is not running"
+        success_msg: "Reverse proxy container {{ reverse_proxy_vmid }} is running"
+
+    - name: Validate Nginx configuration syntax
+      ansible.builtin.command:
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- nginx -t"
+      register: nginx_config_test
+      changed_when: false
+
+    - name: Assert Nginx configuration is valid
+      ansible.builtin.assert:
+        that:
+          - nginx_config_test.rc == 0
+        fail_msg: "Nginx configuration test failed"
+        success_msg: "Nginx configuration is valid"
+
+    - name: Check required security service states
+      ansible.builtin.command:
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl is-active {{ item }}"
+      loop:
+        - nginx
+        - crowdsec
+        - crowdsec-firewall-bouncer
+      register: security_services
+      changed_when: false
+      failed_when: false
+
+    - name: Assert required security services are active
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+          - item.stdout | trim == 'active'
+        fail_msg: "Service {{ item.item }} is not active"
+        success_msg: "Service {{ item.item }} is active"
+      loop: "{{ security_services.results }}"
+
+    - name: Check required timer units are enabled
+      ansible.builtin.command:
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl is-enabled {{ item }}"
+      loop:
+        - certbot-renewal.timer
+        - geoip-update.timer
+        - crowdsec-update.timer
+      register: required_timers_enabled
+      changed_when: false
+      failed_when: false
+
+    - name: Assert required timers are enabled
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+          - item.stdout | trim == 'enabled'
+        fail_msg: "Timer {{ item.item }} is not enabled"
+        success_msg: "Timer {{ item.item }} is enabled"
+      loop: "{{ required_timers_enabled.results }}"
+
+    - name: Check required timer units are active
+      ansible.builtin.command:
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- systemctl is-active {{ item }}"
+      loop:
+        - certbot-renewal.timer
+        - geoip-update.timer
+        - crowdsec-update.timer
+      register: required_timers_active
+      changed_when: false
+      failed_when: false
+
+    - name: Assert required timers are active
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+          - item.stdout | trim == 'active'
+        fail_msg: "Timer {{ item.item }} is not active"
+        success_msg: "Timer {{ item.item }} is active"
+      loop: "{{ required_timers_active.results }}"
+
+    - name: Check TLS certificate files exist
+      ansible.builtin.command:
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- test -s {{ item }}"
+      loop:
+        - "/etc/letsencrypt/live/{{ reverse_proxy_domain }}/fullchain.pem"
+        - "/etc/letsencrypt/live/{{ reverse_proxy_domain }}/privkey.pem"
+      register: tls_files
+      changed_when: false
+      failed_when: false
+
+    - name: Assert TLS certificate files exist
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+        fail_msg: "Missing TLS file: {{ item.item }}"
+        success_msg: "TLS file present: {{ item.item }}"
+      loop: "{{ tls_files.results }}"
+
+    - name: Check Proxmox firewall config for reverse proxy exists
+      ansible.builtin.stat:
+        path: "/etc/pve/firewall/{{ reverse_proxy_vmid }}.fw"
+      register: rp_fw_file
+
+    - name: Assert Proxmox firewall config exists
+      ansible.builtin.assert:
+        that:
+          - rp_fw_file.stat.exists
+        fail_msg: "Missing Proxmox firewall config: /etc/pve/firewall/{{ reverse_proxy_vmid }}.fw"
+        success_msg: "Proxmox firewall config exists"
+
+    - name: Validate required Proxmox firewall rules
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          grep -q '^policy_in: DROP$' /etc/pve/firewall/{{ reverse_proxy_vmid }}.fw
+          grep -q 'IN ACCEPT -p tcp -dport {{ reverse_proxy_http_port }}' /etc/pve/firewall/{{ reverse_proxy_vmid }}.fw
+          grep -q 'IN ACCEPT -p tcp -dport {{ reverse_proxy_https_port }}' /etc/pve/firewall/{{ reverse_proxy_vmid }}.fw
+          grep -q 'IN ACCEPT -p tcp -dport {{ reverse_proxy_ssh_port }} -source {{ reverse_proxy_internal_subnet }}' /etc/pve/firewall/{{ reverse_proxy_vmid }}.fw
+      register: firewall_rules_check
+      changed_when: false
+
+    - name: Assert required Proxmox firewall rules are present
+      ansible.builtin.assert:
+        that:
+          - firewall_rules_check.rc == 0
+        fail_msg: "Required Proxmox firewall rules are missing or changed"
+        success_msg: "Required Proxmox firewall rules are present"
+
+    - name: Verify backend vhost files exist
+      ansible.builtin.command:
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- test -f /etc/nginx/sites-available/{{ item.name }}.conf"
+      loop: "{{ reverse_proxy_backends }}"
+      register: backend_vhost_files
+      changed_when: false
+      failed_when: false
+      when: reverse_proxy_backends | length > 0
+
+    - name: Assert backend vhost files exist
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+        fail_msg: "Missing vhost file for backend: {{ item.item.name }}"
+        success_msg: "Vhost file present for backend: {{ item.item.name }}"
+      loop: "{{ backend_vhost_files.results }}"
+      when: reverse_proxy_backends | length > 0
+
+    - name: Verify internal-only backends are protected by internal-only snippet
+      ansible.builtin.command:
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- grep -q 'include /etc/nginx/snippets/internal-only.conf;' /etc/nginx/sites-available/{{ item.name }}.conf"
+      loop: "{{ reverse_proxy_backends | selectattr('internal_only', 'defined') | selectattr('internal_only') | list }}"
+      register: internal_only_checks
+      changed_when: false
+      failed_when: false
+
+    - name: Assert internal-only snippet is applied
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+        fail_msg: "internal_only backend missing protection: {{ item.item.name }}"
+        success_msg: "internal_only protection set for backend: {{ item.item.name }}"
+      loop: "{{ internal_only_checks.results | default([]) }}"
+
+    - name: Verify external backends are protected by geo-block snippet
+      ansible.builtin.command:
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- grep -q 'include /etc/nginx/snippets/geo-block.conf;' /etc/nginx/sites-available/{{ item.name }}.conf"
+      loop: "{{ reverse_proxy_backends | rejectattr('internal_only', 'defined') | list + (reverse_proxy_backends | selectattr('internal_only', 'defined') | rejectattr('internal_only') | list) }}"
+      register: external_backend_checks
+      changed_when: false
+      failed_when: false
+
+    - name: Assert geo-block snippet is applied to external backends
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+        fail_msg: "External backend missing geo-block protection: {{ item.item.name }}"
+        success_msg: "Geo-block protection set for backend: {{ item.item.name }}"
+      loop: "{{ external_backend_checks.results | default([]) }}"
+
+    - name: Verify HTTPS virtual hosts answer local health endpoint
+      ansible.builtin.command:
+        cmd: >
+          pct exec {{ reverse_proxy_vmid }} -- curl -kfsS
+          --resolve {{ item.subdomain }}.{{ reverse_proxy_domain }}:443:127.0.0.1
+          https://{{ item.subdomain }}.{{ reverse_proxy_domain }}/nginx-health
+      loop: "{{ reverse_proxy_backends }}"
+      register: health_endpoint_checks
+      changed_when: false
+      failed_when: false
+      when: reverse_proxy_backends | length > 0
+
+    - name: Assert HTTPS virtual hosts health endpoint is reachable
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+          - item.stdout | trim == 'OK'
+        fail_msg: "Health endpoint failed for backend: {{ item.item.name }}"
+        success_msg: "Health endpoint OK for backend: {{ item.item.name }}"
+      loop: "{{ health_endpoint_checks.results }}"
+      when: reverse_proxy_backends | length > 0
+
+    - name: Verify backend TCP connectivity from reverse proxy container
+      ansible.builtin.command:
+        cmd: >
+          pct exec {{ reverse_proxy_vmid }} -- bash -lc
+          "timeout 3 bash -c '</dev/tcp/{{ item.backend_host }}/{{ item.backend_port }}'"
+      loop: "{{ reverse_proxy_backends }}"
+      register: backend_tcp_checks
+      changed_when: false
+      failed_when: false
+      when: reverse_proxy_backends | length > 0
+
+    - name: Assert backend TCP connectivity is healthy
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+        fail_msg: "Cannot reach backend {{ item.item.name }} at {{ item.item.backend_host }}:{{ item.item.backend_port }}"
+        success_msg: "Backend reachable: {{ item.item.name }}"
+      loop: "{{ backend_tcp_checks.results }}"
+      when: reverse_proxy_backends | length > 0
+
+    - name: Check reverse proxy response headers on public service
+      ansible.builtin.command:
+        cmd: >
+          pct exec {{ reverse_proxy_vmid }} -- curl -kIs
+          --resolve watch.{{ reverse_proxy_domain }}:443:127.0.0.1
+          https://watch.{{ reverse_proxy_domain }}/
+      register: watch_headers
+      changed_when: false
+      failed_when: false
+
+    - name: Assert important security headers are present on public service
+      ansible.builtin.assert:
+        that:
+          - watch_headers.rc == 0
+          - "'x-frame-options:' in (watch_headers.stdout | lower)"
+          - "'x-content-type-options:' in (watch_headers.stdout | lower)"
+          - "'referrer-policy:' in (watch_headers.stdout | lower)"
+        fail_msg: "Public endpoint does not expose expected security headers"
+        success_msg: "Public endpoint exposes expected security headers"
+
+    - name: Display verification summary
+      ansible.builtin.debug:
+        msg: |
+          Reverse Proxy verification completed successfully.
+          Checked items:
+          - Container running: {{ reverse_proxy_vmid }}
+          - Nginx config syntax and runtime services
+          - CrowdSec and firewall bouncer service state
+          - Certbot/GeoIP/CrowdSec timer state
+          - TLS certificate file presence
+          - Proxmox firewall policy/rules
+          - Backend vhost access-policy snippets
+          - HTTPS vhost health endpoints
+          - Backend network reachability
+
+  post_tasks:
+    - name: Remove local deploy key
+      ansible.builtin.file:
+        path: /tmp/.ansible_deploy_key
+        state: absent
+      delegate_to: localhost
+      become: false
+      run_once: true
+      tags: always

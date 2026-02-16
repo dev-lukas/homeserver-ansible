@@ -59,6 +59,11 @@ ansible-playbook playbooks/site.yml
 ansible-playbook playbooks/proxmox.yml
 ```
 
+### Verify reverse proxy and safety mechanisms
+```bash
+ansible-playbook playbooks/reverse_proxy_verify.yml --ask-vault-pass
+```
+
 ### Run with specific tags
 ```bash
 # Only SSH configuration
