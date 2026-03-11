@@ -29,7 +29,9 @@ haos_enable_zwave_js: false  # Enable if accessing Z-Wave JS UI externally
 
 # USB passthrough for Zigbee/Z-Wave coordinators
 # Find device IDs with: lsusb
-# haos_usb_passthrough:
+# Examples:
 #   - "10c4:ea60"  # Silicon Labs Zigbee (e.g., Sonoff Zigbee 3.0)
 #   - "1a86:55d4"  # Sonoff Zigbee 3.0 USB Dongle Plus
 #   - "0658:0200"  # Aeotec Z-Stick
+haos_usb_passthrough:
+  - "303a:4001"  # Nabu Casa ZWA-2 (Z-Wave)
