@@ -52,6 +52,7 @@
     mode: "0775"
     recurse: true
 
+# Re-apply transcoding ownership after recursive chown above
 - name: Set ownership on transcoding directory
   ansible.builtin.file:
     path: /mediapool/media/transcoding

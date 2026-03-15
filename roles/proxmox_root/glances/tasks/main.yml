@@ -159,5 +159,5 @@
     marker: "# {mark} ANSIBLE MANAGED - Glances"
     insertafter: "\\[RULES\\]"
     block: |
-      IN ACCEPT -source 192.168.178.0/24 -p tcp -dport {{ glances_port }} -log nolog
+      IN ACCEPT -source {{ internal_subnet }} -p tcp -dport {{ glances_port }} -log nolog
   notify: Reload pve-firewall
