@@ -32,7 +32,7 @@
             - WIREGUARD_ENDPOINT_PORT=51820
             - TZ={{ media_services_timezone }}
             # Allow local network access (for Prowlarr → Sonarr/Radarr communication)
-            - FIREWALL_OUTBOUND_SUBNETS=192.168.178.0/24
+            - FIREWALL_OUTBOUND_SUBNETS={{ internal_subnet }}
           ports:
             # Prowlarr via Gluetun
             - "{{ media_services_prowlarr_port }}:9696"

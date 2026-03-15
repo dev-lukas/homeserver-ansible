@@ -1,6 +1,9 @@
 ---
 # Variables specific to Proxmox hosts
 
+# Network
+internal_subnet: "192.168.178.0/24"
+
 # Power management settings
 powertop_auto_tune: true
 ltr_ignore_enabled: true

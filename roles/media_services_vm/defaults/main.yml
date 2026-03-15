@@ -5,7 +5,7 @@
 media_services_vmid: 106
 media_services_hostname: "media-services"
 media_services_storage: "vmpool"
-media_services_disk_size: "64"
+media_services_disk_size: "128"
 media_services_memory: 8192
 media_services_cores: 4
 

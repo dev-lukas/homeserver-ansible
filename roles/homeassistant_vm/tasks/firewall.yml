@@ -15,78 +15,10 @@
     force: false
 
 - name: Create VM firewall rules
-  ansible.builtin.shell:
-    cmd: |
-      cat > /etc/pve/firewall/{{ haos_vmid }}.fw << FWEOF
-      [OPTIONS]
-      enable: 1
-      dhcp: 0
-      ndp: 0
-      radv: 0
-      macfilter: 0
-      ipfilter: 0
-      policy_in: DROP
-      policy_out: ACCEPT
-      log_level_in: nolog
-      log_level_out: nolog
-
-      [RULES]
-      # ============================================
-      # INBOUND RULES - Restrictive by default
-      # ============================================
-
-      # Home Assistant Web Interface (required)
-      IN ACCEPT -p tcp -dport {{ haos_web_port }} -log nolog
-
-      # DNS for DHCP client and local resolution
-      IN ACCEPT -p udp -dport 53 -log nolog
-      IN ACCEPT -p tcp -dport 53 -log nolog
-
-      # mDNS/Bonjour for device discovery (Chromecast, HomeKit, etc.)
-      IN ACCEPT -p udp -dport 5353 -log nolog
-
-      # SSDP/UPnP for device discovery (Philips Hue, Roku, etc.)
-      IN ACCEPT -p udp -dport 1900 -log nolog
-
-      # DHCP client
-      IN ACCEPT -p udp -dport 68 -log nolog
-
-      # ICMP ping (for network troubleshooting)
-      IN ACCEPT -p icmp -log nolog
-
-      {% if haos_enable_mqtt %}
-      # MQTT Broker (if running Mosquitto add-on)
-      IN ACCEPT -p tcp -dport {{ haos_mqtt_port }} -log nolog
-      IN ACCEPT -p tcp -dport {{ haos_mqtt_port_ssl }} -log nolog
-      {% endif %}
-
-      {% if haos_enable_homekit %}
-      # HomeKit Bridge
-      IN ACCEPT -p tcp -dport {{ haos_homekit_port }} -log nolog
-      {% endif %}
-
-      {% if haos_enable_matter %}
-      # Matter protocol
-      IN ACCEPT -p udp -dport {{ haos_matter_port }} -log nolog
-      IN ACCEPT -p tcp -dport {{ haos_matter_port }} -log nolog
-      {% endif %}
-
-      {% if haos_enable_zwave_js %}
-      # Z-Wave JS UI (if using external access)
-      IN ACCEPT -p tcp -dport {{ haos_zwave_js_port }} -log nolog
-      {% endif %}
-
-      # Drop and log all other inbound traffic
-      IN DROP -log warning
-
-      # ============================================
-      # OUTBOUND RULES - More permissive for integrations
-      # ============================================
-
-      # Allow all outbound (needed for cloud integrations, updates, etc.)
-      OUT ACCEPT -log nolog
-      FWEOF
-  changed_when: true
+  ansible.builtin.template:
+    src: vm_firewall.fw.j2
+    dest: "/etc/pve/firewall/{{ haos_vmid }}.fw"
+    mode: "0640"
 
 - name: Display firewall configuration summary
   ansible.builtin.debug:
