@@ -84,34 +84,26 @@
     msg: "{{ nfs_exports_status.stdout_lines }}"
 
 # Configure Proxmox cluster firewall to allow NFS traffic from media_services_vm only
-- name: Add NFS firewall rules to Proxmox cluster
-  ansible.builtin.shell:
-    cmd: |
-      # Check if cluster.fw exists, create if not
-      if [ ! -f /etc/pve/firewall/cluster.fw ]; then
-        cat > /etc/pve/firewall/cluster.fw << 'EOF'
+- name: Ensure cluster firewall file exists
+  ansible.builtin.copy:
+    dest: /etc/pve/firewall/cluster.fw
+    content: |
       [OPTIONS]
+      policy_in: DROP
       enable: 1
-      policy_in: ACCEPT
-      policy_out: ACCEPT
 
       [RULES]
-      EOF
-      fi
-      
-      # Add NFS rules if not present (restricted to media_services_vm IP)
-      if ! grep -q "dport 2049" /etc/pve/firewall/cluster.fw; then
-        echo "" >> /etc/pve/firewall/cluster.fw
-        echo "# NFS Server ports - restricted to media_services_vm" >> /etc/pve/firewall/cluster.fw
-        echo "IN ACCEPT -source {{ media_services_ip }} -p tcp -dport 111 -log nolog" >> /etc/pve/firewall/cluster.fw
-        echo "IN ACCEPT -source {{ media_services_ip }} -p udp -dport 111 -log nolog" >> /etc/pve/firewall/cluster.fw
-        echo "IN ACCEPT -source {{ media_services_ip }} -p tcp -dport 2049 -log nolog" >> /etc/pve/firewall/cluster.fw
-        echo "IN ACCEPT -source {{ media_services_ip }} -p udp -dport 2049 -log nolog" >> /etc/pve/firewall/cluster.fw
-      fi
-  changed_when: false
-  notify: Reload pve-firewall
+    mode: "0640"
+    force: false
 
-- name: Reload Proxmox firewall immediately
-  ansible.builtin.command:
-    cmd: pve-firewall restart
-  changed_when: false
+- name: Add NFS firewall rules to Proxmox cluster
+  ansible.builtin.blockinfile:
+    path: /etc/pve/firewall/cluster.fw
+    marker: "# {mark} ANSIBLE MANAGED - NFS Server"
+    insertafter: "\\[RULES\\]"
+    block: |
+      IN ACCEPT -source {{ media_services_ip }} -p tcp -dport 111 -log nolog
+      IN ACCEPT -source {{ media_services_ip }} -p udp -dport 111 -log nolog
+      IN ACCEPT -source {{ media_services_ip }} -p tcp -dport 2049 -log nolog
+      IN ACCEPT -source {{ media_services_ip }} -p udp -dport 2049 -log nolog
+  notify: Reload pve-firewall

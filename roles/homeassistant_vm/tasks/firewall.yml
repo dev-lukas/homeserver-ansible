@@ -2,24 +2,17 @@
 # Proxmox firewall configuration for Home Assistant OS VM
 # Implements restrictive firewall rules allowing only necessary traffic
 
-- name: Ensure Proxmox firewall is enabled at datacenter level
-  ansible.builtin.shell:
-    cmd: |
-      if ! grep -q "enable: 1" /etc/pve/firewall/cluster.fw 2>/dev/null; then
-        mkdir -p /etc/pve/firewall
-        cat > /etc/pve/firewall/cluster.fw << 'EOF'
+- name: Ensure cluster firewall file exists
+  ansible.builtin.copy:
+    dest: /etc/pve/firewall/cluster.fw
+    content: |
       [OPTIONS]
-      enable: 1
       policy_in: DROP
-      policy_out: ACCEPT
-      log_ratelimit: enable=1,rate=1/second,burst=5
+      enable: 1
 
       [RULES]
-      # Allow established connections
-      IN ACCEPT -m conntrack --ctstate RELATED,ESTABLISHED -log nolog
-      EOF
-      fi
-  changed_when: true
+    mode: "0640"
+    force: false
 
 - name: Create VM firewall rules
   ansible.builtin.shell:

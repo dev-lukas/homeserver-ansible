@@ -139,8 +139,8 @@
   delay: 5
   until: glances_check.status == 200
 
-# Configure Proxmox host firewall to allow Glances access from internal network
-- name: Configure Proxmox cluster firewall for Glances
+# Ensure cluster firewall file exists with base configuration
+- name: Ensure cluster firewall base config exists
   ansible.builtin.copy:
     dest: /etc/pve/firewall/cluster.fw
     content: |
@@ -149,13 +149,15 @@
       enable: 1
 
       [RULES]
-      IN ACCEPT -source 192.168.178.0/24 -p tcp -dport {{ glances_port }} -log nolog
     mode: "0640"
-    force: true
-  register: firewall_changed
+    force: false
 
-- name: Reload pve-firewall if changed
-  ansible.builtin.command:
-    cmd: pve-firewall restart
-  when: firewall_changed.changed
-  changed_when: true
+# Configure Proxmox host firewall to allow Glances access from internal network
+- name: Configure Proxmox cluster firewall for Glances
+  ansible.builtin.blockinfile:
+    path: /etc/pve/firewall/cluster.fw
+    marker: "# {mark} ANSIBLE MANAGED - Glances"
+    insertafter: "\\[RULES\\]"
+    block: |
+      IN ACCEPT -source 192.168.178.0/24 -p tcp -dport {{ glances_port }} -log nolog
+  notify: Reload pve-firewall

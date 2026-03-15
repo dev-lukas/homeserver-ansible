@@ -39,5 +39,9 @@
     mode: "0755"
   loop:
     - downloads
+    - downloads/incomplete
     - tv
     - movies
+    - anime
+    - anime-movies
+    - documentaries
