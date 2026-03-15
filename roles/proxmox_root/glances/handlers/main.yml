@@ -6,3 +6,8 @@
     name: glances
     state: restarted
     daemon_reload: true
+
+- name: Reload pve-firewall
+  ansible.builtin.command:
+    cmd: pve-firewall restart
+  changed_when: true

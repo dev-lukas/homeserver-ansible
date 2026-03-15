@@ -9,3 +9,8 @@
   ansible.builtin.systemd:
     name: nfs-kernel-server
     state: restarted
+
+- name: Reload pve-firewall
+  ansible.builtin.command:
+    cmd: pve-firewall restart
+  changed_when: true
