@@ -137,13 +137,13 @@
 
     - name: Upgrade packages
       ansible.builtin.command:
-        cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get upgrade -y"
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- bash -c 'DEBIAN_FRONTEND=noninteractive apt-get upgrade -y'"
       register: apt_upgrade
       changed_when: "'0 upgraded' not in apt_upgrade.stdout"
 
     - name: Autoremove unused packages
       ansible.builtin.command:
-        cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get autoremove -y"
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- bash -c 'DEBIAN_FRONTEND=noninteractive apt-get autoremove -y'"
       changed_when: false
 
     - name: Check if nginx needs reload
@@ -191,7 +191,7 @@
 
     - name: Autoremove unused packages
       ansible.builtin.shell:
-        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} apt-get autoremove -y"
+        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} 'DEBIAN_FRONTEND=noninteractive apt-get autoremove -y'"
       changed_when: false
 
     - name: Update Docker images - BentoPDF
