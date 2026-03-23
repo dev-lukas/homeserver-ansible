@@ -194,44 +194,132 @@
         cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} 'DEBIAN_FRONTEND=noninteractive apt-get autoremove -y'"
       changed_when: false
 
-    - name: Update Docker images - BentoPDF
+    - name: Pull and recreate Docker stacks
       ansible.builtin.shell:
-        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} 'cd {{ stacks_dir }}/bentopdf && docker compose pull && docker compose up -d'"
-      register: bentopdf_update
-      changed_when: "'Pulled' in bentopdf_update.stdout or 'Started' in bentopdf_update.stderr"
-
-    - name: Update Docker images - Vert
-      ansible.builtin.shell:
-        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} 'cd {{ stacks_dir }}/vert && docker compose pull && docker compose up -d'"
-      register: vert_update
-      changed_when: "'Pulled' in vert_update.stdout or 'Started' in vert_update.stderr"
-
-    - name: Update Docker images - Mealie
-      ansible.builtin.shell:
-        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} 'cd {{ stacks_dir }}/mealie && docker compose pull && docker compose up -d'"
-      register: mealie_update
-      changed_when: "'Pulled' in mealie_update.stdout or 'Started' in mealie_update.stderr"
-
-    - name: Update Docker images - Homepage
-      ansible.builtin.shell:
-        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} 'cd {{ stacks_dir }}/homepage && docker compose pull && docker compose up -d'"
-      register: homepage_update
-      changed_when: "'Pulled' in homepage_update.stdout or 'Started' in homepage_update.stderr"
+        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} 'cd {{ stacks_dir }}/{{ item }} && docker compose pull && docker compose up -d'"
+      loop:
+        - bentopdf
+        - vert
+        - mealie
+        - homepage
+      register: stack_updates
+      changed_when: false
 
     - name: Prune unused Docker images
       ansible.builtin.shell:
         cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} docker image prune -f"
       register: prune_result
-      changed_when: "'Total reclaimed space' in prune_result.stdout and 'Total reclaimed space: 0B' not in prune_result.stdout"
+      changed_when: false
 
     - name: Display Docker update summary
       ansible.builtin.debug:
         msg: |
           Local Services VM updated.
-          BentoPDF: {{ 'Updated' if bentopdf_update.changed else 'No changes' }}
-          Vert: {{ 'Updated' if vert_update.changed else 'No changes' }}
-          Mealie: {{ 'Updated' if mealie_update.changed else 'No changes' }}
-          Homepage: {{ 'Updated' if homepage_update.changed else 'No changes' }}
+          Docker stacks recreated: bentopdf, vert, mealie, homepage
+          Pruned: {{ prune_result.stdout_lines[-1] | default('Done') }}
+
+  post_tasks:
+    - name: Remove deploy key from Proxmox
+      ansible.builtin.file:
+        path: "{{ ssh_key_path }}"
+        state: absent
+
+    - name: Remove local deploy key
+      ansible.builtin.file:
+        path: /tmp/.ansible_deploy_key
+        state: absent
+      delegate_to: localhost
+      become: false
+      run_once: true
+      tags: always
+
+- name: Maintenance - Media Services VM
+  hosts: proxmox-root
+  gather_facts: false
+  tags: [media_services, maintenance]
+  vars:
+    media_services_ip: "{{ hostvars['proxmox-root']['media_services_ip'] | default('192.168.178.11') }}"
+    stacks_dir: "/opt/stacks"
+    ssh_key_path: "/tmp/.ansible_deploy_key"
+    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ssh_key_path }}"
+    # Stacks that have their own network
+    media_services_standalone_stacks:
+      - sonarr
+      - sonarr-anime
+      - radarr
+      - radarr-anime
+    # Stacks using network_mode: container:gluetun (must be restarted after gluetun)
+    media_services_gluetun_stacks:
+      - prowlarr
+      - sabnzbd
+      - qbittorrent
+      - umlautadaptarr
+
+  pre_tasks:
+    - name: Write deploy key to temp file on Proxmox
+      ansible.builtin.copy:
+        content: "{{ vault_ansible_deploy_private_key }}"
+        dest: "{{ ssh_key_path }}"
+        mode: "0600"
+      no_log: true
+
+  tasks:
+    - name: Update apt cache on VM
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ media_services_ip }} apt-get update"
+      changed_when: false
+
+    - name: Upgrade packages on VM
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ media_services_ip }} 'DEBIAN_FRONTEND=noninteractive apt-get upgrade -y'"
+      register: apt_upgrade
+      changed_when: "'0 upgraded' not in apt_upgrade.stdout"
+
+    - name: Autoremove unused packages
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ media_services_ip }} 'DEBIAN_FRONTEND=noninteractive apt-get autoremove -y'"
+      changed_when: false
+
+    - name: Pull all Docker images
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ media_services_ip }} 'cd {{ stacks_dir }}/{{ item }} && docker compose pull'"
+      loop: "{{ ['gluetun'] + media_services_gluetun_stacks + media_services_standalone_stacks }}"
+      changed_when: false
+
+    - name: Update standalone stacks
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ media_services_ip }} 'cd {{ stacks_dir }}/{{ item }} && docker compose up -d'"
+      loop: "{{ media_services_standalone_stacks }}"
+      changed_when: false
+
+    - name: Stop gluetun-dependent stacks
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ media_services_ip }} 'cd {{ stacks_dir }}/{{ item }} && docker compose down'"
+      loop: "{{ media_services_gluetun_stacks }}"
+      changed_when: false
+
+    - name: Update gluetun
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ media_services_ip }} 'cd {{ stacks_dir }}/gluetun && docker compose up -d'"
+      changed_when: false
+
+    - name: Start gluetun-dependent stacks
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ media_services_ip }} 'cd {{ stacks_dir }}/{{ item }} && docker compose up -d'"
+      loop: "{{ media_services_gluetun_stacks }}"
+      changed_when: false
+
+    - name: Prune unused Docker images
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ media_services_ip }} docker image prune -f"
+      register: prune_result
+      changed_when: false
+
+    - name: Display update summary
+      ansible.builtin.debug:
+        msg: |
+          Media Services VM updated.
+          Packages upgraded: {{ apt_upgrade.changed }}
           Pruned: {{ prune_result.stdout_lines[-1] | default('Done') }}
 
   post_tasks:
@@ -285,9 +373,9 @@
 
     - name: Update Claude Code
       ansible.builtin.shell:
-        cmd: "ssh {{ ssh_opts }} root@{{ dev_vm_ip }} 'npm update -g @anthropic-ai/claude-code'"
+        cmd: "ssh {{ ssh_opts }} root@{{ dev_vm_ip }} 'claude update'"
       register: claude_update
-      changed_when: "'changed' in claude_update.stdout or 'added' in claude_update.stdout"
+      changed_when: false
       failed_when: false
 
     - name: Display update summary
@@ -295,7 +383,7 @@
         msg: |
           Development VM updated.
           Packages upgraded: {{ apt_upgrade.changed }}
-          Claude Code: {{ 'Updated' if claude_update.changed else 'No changes' }}
+          Claude Code: {{ claude_update.stdout | default('update attempted') }}
 
   post_tasks:
     - name: Remove deploy key from Proxmox
