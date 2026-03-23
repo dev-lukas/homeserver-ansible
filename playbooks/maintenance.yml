@@ -249,4 +249,67 @@
       run_once: true
       tags: always
 
+- name: Maintenance - Development VM
+  hosts: proxmox-root
+  gather_facts: false
+  tags: [dev_vm, maintenance]
+  vars:
+    dev_vm_ip: "{{ hostvars['proxmox-root']['dev_vm_ip'] | default('192.168.178.12') }}"
+    ssh_key_path: "/tmp/.ansible_deploy_key"
+    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ssh_key_path }}"
+
+  pre_tasks:
+    - name: Write deploy key to temp file on Proxmox
+      ansible.builtin.copy:
+        content: "{{ vault_ansible_deploy_private_key }}"
+        dest: "{{ ssh_key_path }}"
+        mode: "0600"
+      no_log: true
+
+  tasks:
+    - name: Update apt cache on VM
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ dev_vm_ip }} apt-get update"
+      changed_when: false
+
+    - name: Upgrade packages on VM
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ dev_vm_ip }} 'DEBIAN_FRONTEND=noninteractive apt-get upgrade -y'"
+      register: apt_upgrade
+      changed_when: "'0 upgraded' not in apt_upgrade.stdout"
+
+    - name: Autoremove unused packages
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ dev_vm_ip }} 'DEBIAN_FRONTEND=noninteractive apt-get autoremove -y'"
+      changed_when: false
+
+    - name: Update Claude Code
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ dev_vm_ip }} 'npm update -g @anthropic-ai/claude-code'"
+      register: claude_update
+      changed_when: "'changed' in claude_update.stdout or 'added' in claude_update.stdout"
+      failed_when: false
+
+    - name: Display update summary
+      ansible.builtin.debug:
+        msg: |
+          Development VM updated.
+          Packages upgraded: {{ apt_upgrade.changed }}
+          Claude Code: {{ 'Updated' if claude_update.changed else 'No changes' }}
+
+  post_tasks:
+    - name: Remove deploy key from Proxmox
+      ansible.builtin.file:
+        path: "{{ ssh_key_path }}"
+        state: absent
+
+    - name: Remove local deploy key
+      ansible.builtin.file:
+        path: /tmp/.ansible_deploy_key
+        state: absent
+      delegate_to: localhost
+      become: false
+      run_once: true
+      tags: always
+
 - import_playbook: reverse_proxy_verify.yml

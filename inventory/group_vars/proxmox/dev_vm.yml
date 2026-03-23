@@ -1,0 +1,7 @@
+---
+# Development VM configuration overrides
+
+# VM resources
+dev_vm_disk_size: "64"
+dev_vm_memory: 8192
+dev_vm_cores: 4

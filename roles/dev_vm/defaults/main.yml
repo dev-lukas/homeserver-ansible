@@ -1,0 +1,51 @@
+---
+# Development VM role defaults
+
+# VM settings
+dev_vm_vmid: 107
+dev_vm_hostname: "dev"
+dev_vm_storage: "vmpool"
+dev_vm_disk_size: "64"  # Size in GB
+dev_vm_memory: 8192
+dev_vm_cores: 4
+
+# Cloud image settings
+dev_vm_cloud_image_url: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2"
+dev_vm_cloud_image_path: "/var/lib/vz/template/iso/debian-13-generic-amd64.qcow2"
+
+# Network configuration
+dev_vm_bridge: "vmbr0"
+dev_vm_ip: "192.168.178.12"
+dev_vm_gateway: "192.168.178.1"
+dev_vm_netmask: "24"
+dev_vm_nameserver: "192.168.178.2"
+
+# Swap settings
+dev_vm_swap_size: "8G"
+dev_vm_swappiness: 10
+
+# SSH settings
+dev_vm_ssh_port: 22
+
+# Vite dev server port
+dev_vm_vite_port: 5173
+
+# Git settings
+dev_vm_git_user: "dev-lukas"
+dev_vm_git_email: "mail@lukas-roth.dev"
+
+# UFW settings
+dev_vm_ufw_default_incoming: "deny"
+dev_vm_ufw_default_outgoing: "allow"
+
+# Git repositories to clone
+dev_vm_git_repos:
+  - name: firephenix-backend
+    url: "https://github.com/dev-lukas/firephenix-backend.git"
+  - name: firephenix-website
+    url: "https://github.com/dev-lukas/firephenix-website.git"
+  - name: garrysmod-bridge
+    url: "https://github.com/dev-lukas/garrysmod-bridge.git"
+
+# Development workspace
+dev_vm_workspace_dir: "/root/projects"

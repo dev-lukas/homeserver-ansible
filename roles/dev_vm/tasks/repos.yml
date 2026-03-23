@@ -1,0 +1,17 @@
+---
+# Clone project repositories
+
+- name: Create workspace directory
+  ansible.builtin.file:
+    path: "{{ dev_vm_workspace_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Clone project repositories
+  ansible.builtin.git:
+    repo: "{{ item.url }}"
+    dest: "{{ dev_vm_workspace_dir }}/{{ item.name }}"
+    version: main
+    accept_hostkey: true
+  loop: "{{ dev_vm_git_repos }}"
+  failed_when: false

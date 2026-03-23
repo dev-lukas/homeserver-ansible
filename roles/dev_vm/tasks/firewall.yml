@@ -1,0 +1,45 @@
+---
+# Install and configure UFW firewall
+
+- name: Install UFW
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+- name: Set UFW default incoming policy to deny
+  community.general.ufw:
+    direction: incoming
+    default: "{{ dev_vm_ufw_default_incoming }}"
+
+- name: Set UFW default outgoing policy to allow
+  community.general.ufw:
+    direction: outgoing
+    default: "{{ dev_vm_ufw_default_outgoing }}"
+
+- name: Allow SSH through UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ dev_vm_ssh_port }}"
+    proto: tcp
+    comment: "SSH"
+
+- name: Allow Vite dev server through UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ dev_vm_vite_port }}"
+    proto: tcp
+    comment: "Vite Dev Server"
+
+- name: Enable UFW
+  community.general.ufw:
+    state: enabled
+
+- name: Check UFW status
+  ansible.builtin.command:
+    cmd: ufw status verbose
+  register: ufw_status
+  changed_when: false
+
+- name: Display UFW status
+  ansible.builtin.debug:
+    msg: "{{ ufw_status.stdout_lines }}"
