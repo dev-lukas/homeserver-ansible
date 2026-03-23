@@ -101,6 +101,12 @@
         - docker
         - vm
 
+    - role: dev_vm
+      tags:
+        - dev
+        - dev_vm
+        - vm
+
   post_tasks:
     - name: Remove deploy key from temp
       ansible.builtin.file:
