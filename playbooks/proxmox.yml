@@ -107,6 +107,12 @@
         - dev_vm
         - vm
 
+    - role: ci_runner_vm
+      tags:
+        - ci_runner
+        - ci
+        - vm
+
   post_tasks:
     - name: Remove deploy key from temp
       ansible.builtin.file:

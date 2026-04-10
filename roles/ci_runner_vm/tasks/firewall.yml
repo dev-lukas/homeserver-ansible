@@ -1,0 +1,46 @@
+---
+# Install and configure UFW firewall
+
+- name: Install UFW
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+- name: Set UFW default incoming policy to deny
+  community.general.ufw:
+    direction: incoming
+    default: "{{ ci_runner_ufw_default_incoming }}"
+
+- name: Set UFW default outgoing policy to allow
+  community.general.ufw:
+    direction: outgoing
+    default: "{{ ci_runner_ufw_default_outgoing }}"
+
+- name: Allow SSH through UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ ci_runner_ssh_port }}"
+    proto: tcp
+    comment: "SSH"
+
+- name: Allow container registry from internal subnet
+  community.general.ufw:
+    rule: allow
+    port: "{{ ci_runner_registry_port }}"
+    proto: tcp
+    from_ip: "{{ ci_runner_ip | regex_replace('\\.[0-9]+$', '.0/24') }}"
+    comment: "Container Registry"
+
+- name: Enable UFW
+  community.general.ufw:
+    state: enabled
+
+- name: Check UFW status
+  ansible.builtin.command:
+    cmd: ufw status verbose
+  register: ufw_status
+  changed_when: false
+
+- name: Display UFW status
+  ansible.builtin.debug:
+    msg: "{{ ufw_status.stdout_lines }}"

@@ -1,0 +1,53 @@
+---
+# Deploy Docker container registry
+
+- name: Create registry data directory
+  ansible.builtin.file:
+    path: "{{ ci_runner_registry_data_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Create registry stack directory
+  ansible.builtin.file:
+    path: "{{ ci_runner_stacks_dir }}/registry"
+    state: directory
+    mode: "0755"
+
+- name: Deploy registry docker-compose
+  ansible.builtin.copy:
+    dest: "{{ ci_runner_stacks_dir }}/registry/docker-compose.yml"
+    content: |
+      services:
+        registry:
+          image: registry:2
+          container_name: registry
+          restart: unless-stopped
+          ports:
+            - "{{ ci_runner_registry_port }}:5000"
+          volumes:
+            - {{ ci_runner_registry_data_dir }}:/var/lib/registry
+          environment:
+            REGISTRY_STORAGE_DELETE_ENABLED: "true"
+            REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+    mode: "0644"
+
+- name: Start registry stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ ci_runner_stacks_dir }}/registry"
+  register: registry_start
+  changed_when: "'Started' in registry_start.stderr or 'Created' in registry_start.stderr"
+
+- name: Wait for registry to be healthy
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ ci_runner_registry_port }}/v2/"
+    method: GET
+    status_code: [200]
+  register: registry_health
+  retries: 5
+  delay: 3
+  until: registry_health.status == 200
+
+- name: Display registry info
+  ansible.builtin.debug:
+    msg: "Container registry running at {{ ci_runner_ip }}:{{ ci_runner_registry_port }}"

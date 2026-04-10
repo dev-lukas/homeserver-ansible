@@ -1,0 +1,195 @@
+---
+# CI Runner VM role
+# Creates a lean Debian 13 VM with GitHub Actions runner and container registry
+
+# Phase 1: Create VM on Proxmox host
+- name: Download Debian cloud image if not present
+  ansible.builtin.get_url:
+    url: "{{ ci_runner_cloud_image_url }}"
+    dest: "{{ ci_runner_cloud_image_path }}"
+    mode: "0644"
+  register: cloud_image_download
+
+- name: Check if VM exists
+  ansible.builtin.command:
+    cmd: "qm status {{ ci_runner_vmid }}"
+  register: vm_status
+  failed_when: false
+  changed_when: false
+
+- name: Create CI Runner VM
+  ansible.builtin.command:
+    cmd: >
+      qm create {{ ci_runner_vmid }}
+      --name {{ ci_runner_hostname }}
+      --memory {{ ci_runner_memory }}
+      --cores {{ ci_runner_cores }}
+      --cpu cputype=host
+      --net0 virtio,bridge={{ ci_runner_bridge }}
+      --scsihw virtio-scsi-pci
+      --serial0 socket
+      --vga serial0
+      --agent enabled=1
+      --onboot 1
+  when: vm_status.rc != 0
+
+- name: Import cloud image as disk
+  ansible.builtin.command:
+    cmd: >
+      qm disk import {{ ci_runner_vmid }}
+      {{ ci_runner_cloud_image_path }}
+      {{ ci_runner_storage }}
+  register: disk_import
+  when: vm_status.rc != 0
+
+- name: Attach imported disk to VM
+  ansible.builtin.command:
+    cmd: >
+      qm set {{ ci_runner_vmid }}
+      --scsi0 {{ ci_runner_storage }}:vm-{{ ci_runner_vmid }}-disk-0
+      --boot order=scsi0
+  when: vm_status.rc != 0
+
+- name: Resize disk to target size
+  ansible.builtin.command:
+    cmd: "qm disk resize {{ ci_runner_vmid }} scsi0 {{ ci_runner_disk_size }}G"
+  when: vm_status.rc != 0
+
+- name: Configure cloud-init drive
+  ansible.builtin.command:
+    cmd: "qm set {{ ci_runner_vmid }} --ide2 {{ ci_runner_storage }}:cloudinit"
+  when: vm_status.rc != 0
+
+- name: Configure cloud-init network settings
+  ansible.builtin.command:
+    cmd: >
+      qm set {{ ci_runner_vmid }}
+      --ciuser root
+      --ipconfig0 ip={{ ci_runner_ip }}/{{ ci_runner_netmask }},gw={{ ci_runner_gateway }}
+      --nameserver {{ ci_runner_nameserver }}
+      --searchdomain local
+  when: vm_status.rc != 0
+
+- name: Write all SSH public keys to temp file for cloud-init
+  ansible.builtin.copy:
+    content: |
+      {{ vault_ansible_deploy_public_key }}
+      {% for key in ssh_authorized_keys %}{% if key is string %}{{ key }}
+      {% endif %}{% endfor %}
+    dest: /tmp/vm_ssh_keys.pub
+    mode: "0644"
+  when: vm_status.rc != 0
+
+- name: Configure cloud-init SSH keys
+  ansible.builtin.command:
+    cmd: "qm set {{ ci_runner_vmid }} --sshkeys /tmp/vm_ssh_keys.pub"
+  when: vm_status.rc != 0
+
+- name: Remove temp public key file
+  ansible.builtin.file:
+    path: /tmp/vm_ssh_keys.pub
+    state: absent
+  when: vm_status.rc != 0
+
+- name: Regenerate cloud-init image
+  ansible.builtin.command:
+    cmd: "qm cloudinit update {{ ci_runner_vmid }}"
+  when: vm_status.rc != 0
+
+- name: Start the VM
+  ansible.builtin.command:
+    cmd: "qm start {{ ci_runner_vmid }}"
+  register: start_result
+  failed_when: false
+  changed_when: start_result.rc == 0
+
+- name: Wait for VM to boot and get SSH ready
+  ansible.builtin.wait_for:
+    host: "{{ ci_runner_ip }}"
+    port: 22
+    delay: 10
+    timeout: 300
+  when: start_result.changed or vm_status.rc != 0
+
+- name: Wait additional time for cloud-init to complete
+  ansible.builtin.pause:
+    seconds: 30
+  when: vm_status.rc != 0
+
+# Phase 2: Configure VM via SSH using add_host
+- name: Add VM to in-memory inventory
+  ansible.builtin.add_host:
+    name: "{{ ci_runner_hostname }}"
+    ansible_host: "{{ ci_runner_ip }}"
+    ansible_user: root
+    ansible_ssh_private_key_file: /tmp/.ansible_deploy_key
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    groups: ci_runner_target
+
+# Phase 3: Configure the VM (delegate to new host)
+- name: Configure the CI Runner VM
+  block:
+    - name: Wait for cloud-init to finish
+      ansible.builtin.shell:
+        cmd: "cloud-init status --wait || cloud-init status"
+      changed_when: false
+      register: cloud_init_status
+      until: "'status: done' in cloud_init_status.stdout or 'status: disabled' in cloud_init_status.stdout"
+      retries: 30
+      delay: 10
+      failed_when: "'status: error' in cloud_init_status.stdout"
+
+    - name: Update package cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages
+      ansible.builtin.apt:
+        upgrade: dist
+        autoremove: true
+
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - curl
+          - wget
+          - gnupg2
+          - ca-certificates
+          - lsb-release
+          - apt-transport-https
+          - sudo
+          - cron
+          - qemu-guest-agent
+          - jq
+        state: present
+
+    - name: Enable and start qemu-guest-agent
+      ansible.builtin.systemd:
+        name: qemu-guest-agent
+        state: started
+        enabled: true
+
+    - name: Apply security hardening
+      ansible.builtin.include_tasks: harden_vm.yml
+
+    - name: Install and configure UFW firewall
+      ansible.builtin.include_tasks: firewall.yml
+
+    - name: Install Docker Engine
+      ansible.builtin.include_tasks: docker.yml
+
+    - name: Deploy container registry
+      ansible.builtin.include_tasks: registry.yml
+
+    - name: Install GitHub Actions runner
+      ansible.builtin.include_tasks: github_runner.yml
+
+    - name: Configure unattended upgrades
+      ansible.builtin.include_tasks: unattended_upgrades.yml
+
+  delegate_to: "{{ ci_runner_hostname }}"
+
+# Phase 4: Configure Proxmox firewall (after VM is fully configured)
+- name: Configure Proxmox firewall for VM
+  ansible.builtin.include_tasks: proxmox_firewall.yml

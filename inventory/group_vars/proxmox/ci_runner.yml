@@ -1,0 +1,18 @@
+---
+# CI Runner VM configuration
+
+# VM resources
+ci_runner_vmid: 108
+ci_runner_hostname: "ci-runner"
+ci_runner_memory: 4096
+ci_runner_cores: 4
+ci_runner_disk_size: "64"
+
+# Network
+ci_runner_ip: "192.168.178.13"
+ci_runner_gateway: "192.168.178.1"
+ci_runner_netmask: "24"
+ci_runner_nameserver: "192.168.178.2"
+
+# Registry
+ci_runner_registry_port: 5000
