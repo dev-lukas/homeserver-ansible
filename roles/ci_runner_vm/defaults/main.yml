@@ -1,0 +1,43 @@
+---
+# CI Runner VM role defaults
+
+# VM settings
+ci_runner_vmid: 108
+ci_runner_hostname: "ci-runner"
+ci_runner_storage: "vmpool"
+ci_runner_disk_size: "64"  # Size in GB - space for registry images
+ci_runner_memory: 4096
+ci_runner_cores: 4
+
+# Cloud image settings
+ci_runner_cloud_image_url: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2"
+ci_runner_cloud_image_path: "/var/lib/vz/template/iso/debian-13-generic-amd64.qcow2"
+
+# Network configuration
+ci_runner_bridge: "vmbr0"
+ci_runner_ip: "192.168.178.13"
+ci_runner_gateway: "192.168.178.1"
+ci_runner_netmask: "24"
+ci_runner_nameserver: "192.168.178.2"
+
+# SSH settings
+ci_runner_ssh_port: 22
+
+# UFW settings
+ci_runner_ufw_default_incoming: "deny"
+ci_runner_ufw_default_outgoing: "allow"
+
+# Registry settings
+ci_runner_registry_port: 5000
+ci_runner_registry_data_dir: "/opt/registry/data"
+ci_runner_stacks_dir: "/opt/stacks"
+
+# GitHub Actions runner settings
+ci_runner_github_user: "dev-lukas"
+ci_runner_runner_dir: "/opt/actions-runner"
+ci_runner_runner_labels: "self-hosted,linux,x64"
+# Repos to register the runner for
+ci_runner_repos:
+  - firephenix-backend
+  - firephenix-website
+  - garrysmod-bridge

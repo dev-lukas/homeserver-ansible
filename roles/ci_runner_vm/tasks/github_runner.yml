@@ -1,0 +1,124 @@
+---
+# Install and configure GitHub Actions self-hosted runner
+# Registers a runner per repository using a GitHub PAT stored in vault
+
+- name: Create runner user
+  ansible.builtin.user:
+    name: runner
+    system: true
+    shell: /bin/bash
+    home: "{{ ci_runner_runner_dir }}"
+    create_home: true
+
+- name: Add runner user to docker group
+  ansible.builtin.user:
+    name: runner
+    groups: docker
+    append: true
+
+- name: Get latest runner version
+  ansible.builtin.shell:
+    cmd: curl -s https://api.github.com/repos/actions/runner/releases/latest | jq -r '.tag_name' | sed 's/^v//'
+  register: runner_version
+  changed_when: false
+
+- name: Create runner directories per repo
+  ansible.builtin.file:
+    path: "{{ ci_runner_runner_dir }}/{{ item }}"
+    state: directory
+    owner: runner
+    group: runner
+    mode: "0755"
+  loop: "{{ ci_runner_repos }}"
+
+- name: Check if runners are already configured
+  ansible.builtin.stat:
+    path: "{{ ci_runner_runner_dir }}/{{ item }}/.runner"
+  loop: "{{ ci_runner_repos }}"
+  register: runner_configs
+
+- name: Download GitHub Actions runner
+  ansible.builtin.get_url:
+    url: "https://github.com/actions/runner/releases/download/v{{ runner_version.stdout }}/actions-runner-linux-x64-{{ runner_version.stdout }}.tar.gz"
+    dest: "/tmp/actions-runner.tar.gz"
+    mode: "0644"
+  when: runner_configs.results | selectattr('stat.exists', 'equalto', false) | list | length > 0
+
+- name: Extract runner to each unconfigured repo directory
+  ansible.builtin.unarchive:
+    src: /tmp/actions-runner.tar.gz
+    dest: "{{ ci_runner_runner_dir }}/{{ item.item }}"
+    remote_src: true
+    owner: runner
+    group: runner
+  loop: "{{ runner_configs.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not item.stat.exists
+
+- name: Remove runner archive
+  ansible.builtin.file:
+    path: /tmp/actions-runner.tar.gz
+    state: absent
+
+- name: Install runner dependencies
+  ansible.builtin.command:
+    cmd: "{{ ci_runner_runner_dir }}/{{ ci_runner_repos[0] }}/bin/installdependencies.sh"
+  when: runner_configs.results | selectattr('stat.exists', 'equalto', false) | list | length > 0
+
+- name: Get registration token for each repo
+  ansible.builtin.uri:
+    url: "https://api.github.com/repos/{{ ci_runner_github_user }}/{{ item.item }}/actions/runners/registration-token"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ vault_github_runner_pat }}"
+      Accept: "application/vnd.github+json"
+    status_code: 201
+  loop: "{{ runner_configs.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  register: reg_tokens
+  when: not item.stat.exists
+
+- name: Configure runner for each repo
+  ansible.builtin.command:
+    cmd: >
+      ./config.sh
+      --url https://github.com/{{ ci_runner_github_user }}/{{ item.item.item }}
+      --token {{ item.json.token }}
+      --name {{ ci_runner_hostname }}-{{ item.item.item }}
+      --labels {{ ci_runner_runner_labels }}
+      --unattended
+      --replace
+    chdir: "{{ ci_runner_runner_dir }}/{{ item.item.item }}"
+  become: true
+  become_user: runner
+  loop: "{{ reg_tokens.results }}"
+  loop_control:
+    label: "{{ item.item.item | default('skipped') }}"
+  when: item.skipped is not defined
+  no_log: true
+
+- name: Install runner service for each repo
+  ansible.builtin.command:
+    cmd: ./svc.sh install runner
+    chdir: "{{ ci_runner_runner_dir }}/{{ item }}"
+    creates: "/etc/systemd/system/actions.runner.{{ ci_runner_github_user }}-{{ item }}.{{ ci_runner_hostname }}-{{ item }}.service"
+  loop: "{{ ci_runner_repos }}"
+
+- name: Start runner service for each repo
+  ansible.builtin.command:
+    cmd: ./svc.sh start
+    chdir: "{{ ci_runner_runner_dir }}/{{ item }}"
+  loop: "{{ ci_runner_repos }}"
+  changed_when: false
+  failed_when: false
+
+- name: Display runner status
+  ansible.builtin.debug:
+    msg: |
+      GitHub Actions runners configured for:
+      {% for repo in ci_runner_repos %}
+        - {{ ci_runner_github_user }}/{{ repo }} ({{ ci_runner_hostname }}-{{ repo }})
+      {% endfor %}
+      Labels: {{ ci_runner_runner_labels }}
