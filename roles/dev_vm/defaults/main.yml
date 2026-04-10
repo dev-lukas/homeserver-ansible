@@ -40,6 +40,8 @@ dev_vm_ufw_default_outgoing: "allow"
 
 # Git repositories to clone
 dev_vm_git_repos:
+  - name: homeserver-ansible
+    url: "https://github.com/dev-lukas/homeserver-ansible.git"
   - name: firephenix-backend
     url: "https://github.com/dev-lukas/firephenix-backend.git"
   - name: firephenix-website
