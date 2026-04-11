@@ -75,6 +75,9 @@
           access_log /var/log/nginx/{{ item.name }}.access.log json_combined;
           error_log /var/log/nginx/{{ item.name }}.error.log warn;
 
+          {{ 'client_max_body_size ' + item.client_max_body_size + ';' if item.client_max_body_size is defined else '' }}
+          {{ 'chunked_transfer_encoding on;' if item.client_max_body_size is defined else '' }}
+
           # Proxy to backend
           location / {
               include /etc/nginx/snippets/{{ 'websocket' if item.websocket | default(false) else 'proxy' }}-params.conf;

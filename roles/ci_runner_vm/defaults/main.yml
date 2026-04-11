@@ -41,3 +41,4 @@ ci_runner_repos:
   - firephenix-backend
   - firephenix-website
   - garrysmod-bridge
+  - portfolio
