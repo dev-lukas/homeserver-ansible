@@ -133,3 +133,10 @@ reverse_proxy_backends:
     backend_port: 7879
     websocket: true
     internal_only: true
+  - name: "registry"
+    subdomain: "registry"
+    backend_host: "192.168.178.13"
+    backend_port: 5000
+    websocket: false
+    internal_only: true
+    client_max_body_size: "0"  # Unlimited - required for Docker image pushes
