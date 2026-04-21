@@ -51,6 +51,13 @@ reverse_proxy_maxmind_license_key: "{{ vault_maxmind_license_key | default('') }
 # Hetzner DNS API for Let's Encrypt DNS challenge
 reverse_proxy_hetzner_api_token: "{{ vault_hetzner_api_token }}"
 
+# Optional basic-auth credentials for selected backends.
+# Map backend name -> htpasswd file content, for example:
+# vault_reverse_proxy_auth_basic_users:
+#   registry: |
+#     registry:$2y$05$examplehash
+reverse_proxy_auth_basic_users: "{{ vault_reverse_proxy_auth_basic_users | default({}) }}"
+
 # Nginx settings
 reverse_proxy_nginx_worker_processes: "auto"
 reverse_proxy_nginx_worker_connections: 1024

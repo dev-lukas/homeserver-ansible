@@ -28,6 +28,11 @@ vault_maxmind_license_key: "your-license-key"
 
 # CrowdSec Console (optional)
 vault_crowdsec_enroll_key: "your-enrollment-key"
+
+# Optional per-backend htpasswd content
+vault_reverse_proxy_auth_basic_users:
+  registry: |
+    registry:$2y$05$replace-with-htpasswd-output
 ```
 
 ### External Requirements
@@ -84,6 +89,21 @@ reverse_proxy_backends:
     backend_host: "192.168.178.2"
     backend_port: 3000
     websocket: false
+  - name: "registry"
+    subdomain: "registry"
+    backend_host: "192.168.178.13"
+    backend_port: 5000
+    websocket: false
+    internal_only: false
+    auth_basic: true
+    auth_basic_realm: "Registry"
+    client_max_body_size: "0"
+```
+
+Generate an htpasswd entry with:
+
+```bash
+htpasswd -nbB registry 'your-password'
 ```
 
 ## Usage
