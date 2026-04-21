@@ -45,6 +45,8 @@
     cmd: |
       pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/crowdsec/acquis.d/nginx.yaml << EOF
       filenames:
+        - /var/log/nginx/*.access.log
+        - /var/log/nginx/*.error.log
         - /var/log/nginx/access.log
         - /var/log/nginx/error.log
       labels:

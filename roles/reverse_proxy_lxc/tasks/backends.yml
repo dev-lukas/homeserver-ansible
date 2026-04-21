@@ -22,6 +22,36 @@
       EOF'
   changed_when: false
 
+- name: Create basic-auth directory
+  ansible.builtin.command:
+    cmd: "pct exec {{ reverse_proxy_vmid }} -- install -d -m 0750 -o root -g www-data /etc/nginx/htpasswd"
+  changed_when: false
+  when:
+    - reverse_proxy_backends is defined
+    - reverse_proxy_backends | selectattr('auth_basic', 'defined') | list | length > 0
+
+- name: Validate basic-auth credentials are defined
+  ansible.builtin.assert:
+    that:
+      - (item.auth_basic_users | default(reverse_proxy_auth_basic_users[item.name] | default(''))) | length > 0
+    fail_msg: "Backend {{ item.name }} has auth_basic enabled but no htpasswd content was provided."
+  loop: "{{ reverse_proxy_backends }}"
+  when: item.auth_basic | default(false)
+  no_log: true
+
+- name: Deploy basic-auth credentials
+  ansible.builtin.command:
+    cmd: |
+      pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/nginx/htpasswd/{{ item.name }} << EOF
+      {{ item.auth_basic_users | default(reverse_proxy_auth_basic_users[item.name] | default('')) }}
+      EOF
+      chown root:www-data /etc/nginx/htpasswd/{{ item.name }}
+      chmod 0640 /etc/nginx/htpasswd/{{ item.name }}'
+  loop: "{{ reverse_proxy_backends }}"
+  when: item.auth_basic | default(false)
+  changed_when: false
+  no_log: true
+
 - name: Deploy backend configurations
   ansible.builtin.shell:
     cmd: |
@@ -70,6 +100,9 @@
 
           # Access control
           {{ "include /etc/nginx/snippets/internal-only.conf;" if item.internal_only | default(false) else "include /etc/nginx/snippets/geo-block.conf;" }}
+
+          {{ 'auth_basic "' + (item.auth_basic_realm | default("Restricted")) + '";' if item.auth_basic | default(false) else '' }}
+          {{ 'auth_basic_user_file /etc/nginx/htpasswd/' + item.name + ';' if item.auth_basic | default(false) else '' }}
 
           # Logging
           access_log /var/log/nginx/{{ item.name }}.access.log json_combined;
