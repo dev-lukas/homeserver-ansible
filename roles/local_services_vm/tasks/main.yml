@@ -24,6 +24,7 @@
       --name {{ local_services_hostname }}
       --memory {{ local_services_memory }}
       --cores {{ local_services_cores }}
+      --cpu host
       --net0 virtio,bridge={{ local_services_bridge }}
       --scsihw virtio-scsi-pci
       --serial0 socket
