@@ -39,6 +39,8 @@ ci_runner_runner_labels: "self-hosted,linux,x64"
 # Repos to register the runner for
 ci_runner_repos:
   - firephenix-backend
+  - firephenix-gameserver-catalog
+  - firephenix-server-ansible
   - firephenix-website
-  - garrysmod-bridge
+  - homeserver-ansible
   - portfolio
