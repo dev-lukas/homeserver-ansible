@@ -16,3 +16,4 @@ ci_runner_nameserver: "192.168.178.2"
 
 # Registry
 ci_runner_registry_port: 5000
+ci_runner_registry_retention_keep_tags: 5

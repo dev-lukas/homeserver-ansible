@@ -28,8 +28,13 @@ ci_runner_ufw_default_incoming: "deny"
 ci_runner_ufw_default_outgoing: "allow"
 
 # Registry settings
+ci_runner_registry_image: "registry:2"
 ci_runner_registry_port: 5000
 ci_runner_registry_data_dir: "/opt/registry/data"
+ci_runner_registry_retention_keep_tags: 5
+ci_runner_registry_retention_cron_minute: "30"
+ci_runner_registry_retention_cron_hour: "5"
+ci_runner_registry_retention_cron_weekday: "0"
 ci_runner_stacks_dir: "/opt/stacks"
 
 # GitHub Actions runner settings

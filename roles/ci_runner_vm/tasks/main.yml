@@ -2,20 +2,22 @@
 # CI Runner VM role
 # Creates a lean Debian 13 VM with GitHub Actions runner and container registry
 
-# Phase 1: Create VM on Proxmox host
-- name: Download Debian cloud image if not present
-  ansible.builtin.get_url:
-    url: "{{ ci_runner_cloud_image_url }}"
-    dest: "{{ ci_runner_cloud_image_path }}"
-    mode: "0644"
-  register: cloud_image_download
-
 - name: Check if VM exists
   ansible.builtin.command:
     cmd: "qm status {{ ci_runner_vmid }}"
   register: vm_status
   failed_when: false
   changed_when: false
+
+# Phase 1: Create VM on Proxmox host
+- name: Download Debian cloud image if not present
+  ansible.builtin.get_url:
+    url: "{{ ci_runner_cloud_image_url }}"
+    dest: "{{ ci_runner_cloud_image_path }}"
+    mode: "0644"
+    timeout: 60
+  register: cloud_image_download
+  when: vm_status.rc != 0
 
 - name: Create CI Runner VM
   ansible.builtin.command:
@@ -174,25 +176,95 @@
         enabled: true
 
     - name: Apply security hardening
-      ansible.builtin.include_tasks: harden_vm.yml
+      ansible.builtin.include_tasks:
+        file: harden_vm.yml
+        apply:
+          tags:
+            - ci_runner
+            - ci
+            - vm
+      tags:
+        - ci_runner
+        - ci
+        - vm
 
     - name: Install and configure UFW firewall
-      ansible.builtin.include_tasks: firewall.yml
+      ansible.builtin.include_tasks:
+        file: firewall.yml
+        apply:
+          tags:
+            - ci_runner
+            - ci
+            - vm
+      tags:
+        - ci_runner
+        - ci
+        - vm
 
     - name: Install Docker Engine
-      ansible.builtin.include_tasks: docker.yml
+      ansible.builtin.include_tasks:
+        file: docker.yml
+        apply:
+          tags:
+            - ci_runner
+            - ci
+            - vm
+      tags:
+        - ci_runner
+        - ci
+        - vm
 
     - name: Deploy container registry
-      ansible.builtin.include_tasks: registry.yml
+      ansible.builtin.include_tasks:
+        file: registry.yml
+        apply:
+          tags:
+            - ci_runner
+            - ci
+            - vm
+      tags:
+        - ci_runner
+        - ci
+        - vm
 
     - name: Install GitHub Actions runner
-      ansible.builtin.include_tasks: github_runner.yml
+      ansible.builtin.include_tasks:
+        file: github_runner.yml
+        apply:
+          tags:
+            - ci_runner
+            - ci
+            - vm
+      tags:
+        - ci_runner
+        - ci
+        - vm
 
     - name: Configure unattended upgrades
-      ansible.builtin.include_tasks: unattended_upgrades.yml
+      ansible.builtin.include_tasks:
+        file: unattended_upgrades.yml
+        apply:
+          tags:
+            - ci_runner
+            - ci
+            - vm
+      tags:
+        - ci_runner
+        - ci
+        - vm
 
   delegate_to: "{{ ci_runner_hostname }}"
 
 # Phase 4: Configure Proxmox firewall (after VM is fully configured)
 - name: Configure Proxmox firewall for VM
-  ansible.builtin.include_tasks: proxmox_firewall.yml
+  ansible.builtin.include_tasks:
+    file: proxmox_firewall.yml
+    apply:
+      tags:
+        - ci_runner
+        - ci
+        - vm
+  tags:
+    - ci_runner
+    - ci
+    - vm
