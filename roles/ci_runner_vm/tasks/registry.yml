@@ -19,7 +19,7 @@
     content: |
       services:
         registry:
-          image: registry:2
+          image: {{ ci_runner_registry_image }}
           container_name: registry
           restart: unless-stopped
           ports:
@@ -47,6 +47,76 @@
   retries: 5
   delay: 3
   until: registry_health.status == 200
+
+- name: Install registry retention deletion script
+  ansible.builtin.template:
+    src: registry-retention.py.j2
+    dest: /usr/local/bin/registry-retention.py
+    mode: "0755"
+
+- name: Install registry retention runner
+  ansible.builtin.copy:
+    dest: /usr/local/bin/registry-retention.sh
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      echo "$(date --iso-8601=seconds): Starting registry retention"
+
+      /usr/local/bin/registry-retention.py
+
+      echo "$(date --iso-8601=seconds): Running registry garbage collection"
+      docker stop registry >/dev/null
+      trap 'docker start registry >/dev/null 2>&1 || true' EXIT
+
+      docker run --rm \
+        -v {{ ci_runner_registry_data_dir }}:/var/lib/registry \
+        {{ ci_runner_registry_image }} \
+        garbage-collect /etc/docker/registry/config.yml
+
+      docker start registry >/dev/null
+      trap - EXIT
+
+      registry_ready=false
+      for attempt in $(seq 1 30); do
+        if curl -fsS "http://127.0.0.1:{{ ci_runner_registry_port }}/v2/" >/dev/null; then
+          registry_ready=true
+          break
+        fi
+        sleep 1
+      done
+      if [ "$registry_ready" != "true" ]; then
+        echo "$(date --iso-8601=seconds): Registry did not become healthy after garbage collection" >&2
+        exit 1
+      fi
+
+      echo "$(date --iso-8601=seconds): Registry retention completed"
+      df -h {{ ci_runner_registry_data_dir }}
+    mode: "0755"
+
+- name: Create cron job for registry retention
+  ansible.builtin.cron:
+    name: "Container registry retention"
+    minute: "{{ ci_runner_registry_retention_cron_minute }}"
+    hour: "{{ ci_runner_registry_retention_cron_hour }}"
+    weekday: "{{ ci_runner_registry_retention_cron_weekday }}"
+    job: "flock -n /var/lock/registry-retention.lock /usr/local/bin/registry-retention.sh >> /var/log/registry-retention.log 2>&1"
+    user: root
+
+- name: Create logrotate config for registry retention logs
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/registry-retention
+    content: |
+      /var/log/registry-retention.log {
+          weekly
+          rotate 8
+          compress
+          delaycompress
+          missingok
+          notifempty
+          create 0640 root root
+      }
+    mode: "0644"
 
 - name: Display registry info
   ansible.builtin.debug:

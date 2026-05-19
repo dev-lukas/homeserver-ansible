@@ -104,7 +104,11 @@ roles/
 ## Features
 
 - **SSH Key Management**: Automatically deploys SSH keys to all hosts
-- **Power Management**: 
+- **CI Runner Registry Retention**:
+  - Keeps `latest` and other non-SHA tags in the self-hosted registry
+  - Keeps the newest 5 commit-SHA image tags per repository by default
+  - Deletes older SHA tags and runs Docker registry garbage collection weekly
+- **Power Management**:
   - Installs and configures powertop with auto-tune
   - Configures LTR ignore for better Intel power states
   - Sets up cron jobs to apply settings on reboot

@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+import json
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+
+REGISTRY_URL = "http://127.0.0.1:{{ ci_runner_registry_port }}"
+REGISTRY_DATA_DIR = Path("{{ ci_runner_registry_data_dir }}")
+KEEP_SHA_TAGS = int("{{ ci_runner_registry_retention_keep_tags }}")
+SHA_TAG_RE = re.compile(r"^[0-9a-f]{40}$")
+PAGE_SIZE = 1000
+TIMEOUT_SECONDS = 30
+MANIFEST_ACCEPT = ", ".join(
+    [
+        "application/vnd.docker.distribution.manifest.v2+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.v1+json",
+    ]
+)
+
+
+def log(message):
+    print(message, flush=True)
+
+
+def registry_request(method, path, headers=None):
+    url = REGISTRY_URL.rstrip("/") + path
+    request = urllib.request.Request(url, method=method, headers=headers or {})
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+            body = response.read()
+            return response.status, response.headers, body
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"{method} {path} failed with HTTP {exc.code}: {body}") from exc
+
+
+def registry_json(path):
+    status, headers, body = registry_request("GET", path)
+    if status != 200:
+        raise RuntimeError(f"GET {path} returned HTTP {status}")
+    return json.loads(body.decode("utf-8")), headers
+
+
+def next_link(headers):
+    link = headers.get("Link")
+    if not link:
+        return None
+    match = re.search(r"<([^>]+)>;\s*rel=\"next\"", link)
+    if not match:
+        return None
+    url = urllib.parse.urlparse(match.group(1))
+    return url.path + (f"?{url.query}" if url.query else "")
+
+
+def list_repositories():
+    repositories = []
+    path = f"/v2/_catalog?n={PAGE_SIZE}"
+    while path:
+        data, headers = registry_json(path)
+        repositories.extend(data.get("repositories") or [])
+        path = next_link(headers)
+    return sorted(set(repositories))
+
+
+def list_tags(repository):
+    tags = []
+    repo_path = urllib.parse.quote(repository, safe="/")
+    path = f"/v2/{repo_path}/tags/list?n={PAGE_SIZE}"
+    while path:
+        data, headers = registry_json(path)
+        tags.extend(data.get("tags") or [])
+        path = next_link(headers)
+    return sorted(set(tags))
+
+
+def manifest_info(repository, tag):
+    repo_path = urllib.parse.quote(repository, safe="/")
+    tag_path = urllib.parse.quote(tag, safe="")
+    status, headers, body = registry_request(
+        "GET",
+        f"/v2/{repo_path}/manifests/{tag_path}",
+        {"Accept": MANIFEST_ACCEPT},
+    )
+    if status != 200:
+        raise RuntimeError(f"GET manifest for {repository}:{tag} returned HTTP {status}")
+
+    digest = headers.get("Docker-Content-Digest")
+    if not digest:
+        raise RuntimeError(f"Registry did not return Docker-Content-Digest for {repository}:{tag}")
+
+    created = ""
+    try:
+        manifest = json.loads(body.decode("utf-8"))
+    except json.JSONDecodeError:
+        manifest = {}
+
+    config_digest = (manifest.get("config") or {}).get("digest")
+    if config_digest:
+        config_path = urllib.parse.quote(config_digest, safe=":")
+        status, _, config_body = registry_request("GET", f"/v2/{repo_path}/blobs/{config_path}")
+        if status == 200:
+            try:
+                created = json.loads(config_body.decode("utf-8")).get("created") or ""
+            except json.JSONDecodeError:
+                created = ""
+
+    tag_link = (
+        REGISTRY_DATA_DIR
+        / "docker/registry/v2/repositories"
+        / repository
+        / "_manifests/tags"
+        / tag
+        / "current/link"
+    )
+    try:
+        tag_mtime = tag_link.stat().st_mtime
+    except FileNotFoundError:
+        tag_mtime = 0.0
+
+    return {"tag": tag, "digest": digest, "created": created, "mtime": tag_mtime}
+
+
+def delete_manifest(repository, digest):
+    repo_path = urllib.parse.quote(repository, safe="/")
+    digest_path = urllib.parse.quote(digest, safe=":")
+    status, _, _ = registry_request("DELETE", f"/v2/{repo_path}/manifests/{digest_path}")
+    if status not in (202,):
+        raise RuntimeError(f"DELETE {repository}@{digest} returned HTTP {status}")
+
+
+def process_repository(repository):
+    tags = list_tags(repository)
+    if not tags:
+        log(f"{repository}: no tags")
+        return 0
+
+    infos = []
+    for tag in tags:
+        try:
+            infos.append(manifest_info(repository, tag))
+        except Exception as exc:
+            log(f"{repository}:{tag}: skipping tag because manifest inspection failed: {exc}")
+
+    sha_infos = [info for info in infos if SHA_TAG_RE.match(info["tag"])]
+    if len(sha_infos) <= KEEP_SHA_TAGS:
+        log(f"{repository}: keeping all {len(sha_infos)} SHA tags")
+        return 0
+
+    sha_infos.sort(key=lambda info: (info["created"], info["mtime"], info["tag"]), reverse=True)
+    kept_sha_infos = sha_infos[:KEEP_SHA_TAGS]
+    old_sha_infos = sha_infos[KEEP_SHA_TAGS:]
+
+    protected_digests = {
+        info["digest"]
+        for info in infos
+        if not SHA_TAG_RE.match(info["tag"])
+    }
+    protected_digests.update(info["digest"] for info in kept_sha_infos)
+
+    deleted_digests = set()
+    deleted_tags = 0
+    for info in old_sha_infos:
+        tag = info["tag"]
+        digest = info["digest"]
+        if digest in protected_digests:
+            log(f"{repository}:{tag}: keeping because digest is also referenced by a protected tag")
+            continue
+        if digest in deleted_digests:
+            log(f"{repository}:{tag}: digest already deleted")
+            deleted_tags += 1
+            continue
+
+        log(f"{repository}:{tag}: deleting manifest {digest}")
+        delete_manifest(repository, digest)
+        deleted_digests.add(digest)
+        deleted_tags += 1
+
+    log(
+        f"{repository}: kept {len(kept_sha_infos)} newest SHA tags, "
+        f"deleted {deleted_tags} old SHA tags"
+    )
+    return deleted_tags
+
+
+def main():
+    if KEEP_SHA_TAGS < 1:
+        raise RuntimeError("KEEP_SHA_TAGS must be at least 1")
+
+    repositories = list_repositories()
+    if not repositories:
+        log("Registry catalog is empty")
+        return 0
+
+    total_deleted = 0
+    for repository in repositories:
+        total_deleted += process_repository(repository)
+
+    log(f"Registry retention completed; deleted {total_deleted} old SHA tags")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print(f"registry-retention failed: {exc}", file=sys.stderr)
+        raise SystemExit(1)
