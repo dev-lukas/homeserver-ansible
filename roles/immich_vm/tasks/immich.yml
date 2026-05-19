@@ -1,0 +1,123 @@
+---
+# Deploy Immich Docker Compose stack
+
+- name: Validate Immich database password is configured
+  ansible.builtin.assert:
+    that:
+      - vault_immich_db_password is defined
+      - vault_immich_db_password | length > 0
+    fail_msg: "vault_immich_db_password must be set for Immich."
+  no_log: true
+
+- name: Ensure Immich library mount is active before deploying
+  ansible.builtin.command:
+    cmd: "mountpoint -q {{ immich_nfs_mount }}"
+  changed_when: false
+
+- name: Create Immich stack directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ immich_stacks_dir }}/immich"
+    - "{{ immich_db_data_location }}"
+
+- name: Deploy Immich environment file
+  ansible.builtin.copy:
+    dest: "{{ immich_stacks_dir }}/immich/.env"
+    mode: "0600"
+    content: |
+      UPLOAD_LOCATION={{ immich_upload_location }}
+      DB_DATA_LOCATION={{ immich_db_data_location }}
+      TZ={{ immich_timezone }}
+      IMMICH_VERSION={{ immich_version }}
+      DB_PASSWORD={{ vault_immich_db_password }}
+      DB_USERNAME={{ immich_db_username }}
+      DB_DATABASE_NAME={{ immich_db_name }}
+  no_log: true
+
+- name: Deploy Immich docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ immich_stacks_dir }}/immich/docker-compose.yml"
+    mode: "0644"
+    content: |
+      name: immich
+
+      services:
+        immich-server:
+          container_name: immich_server
+          image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
+          volumes:
+            - ${UPLOAD_LOCATION}:/data
+            - /etc/localtime:/etc/localtime:ro
+          env_file:
+            - .env
+          ports:
+            - "{{ immich_web_port }}:2283"
+          depends_on:
+            - redis
+            - database
+          restart: always
+          healthcheck:
+            disable: false
+
+        immich-machine-learning:
+          container_name: immich_machine_learning
+          image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}
+          volumes:
+            - model-cache:/cache
+          env_file:
+            - .env
+          restart: always
+          healthcheck:
+            disable: false
+
+        redis:
+          container_name: immich_redis
+          image: docker.io/valkey/valkey:9
+          healthcheck:
+            test: redis-cli ping || exit 1
+          restart: always
+
+        database:
+          container_name: immich_postgres
+          image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+          environment:
+            POSTGRES_PASSWORD: ${DB_PASSWORD}
+            POSTGRES_USER: ${DB_USERNAME}
+            POSTGRES_DB: ${DB_DATABASE_NAME}
+            POSTGRES_INITDB_ARGS: '--data-checksums'
+          volumes:
+            - ${DB_DATA_LOCATION}:/var/lib/postgresql/data
+          shm_size: 128mb
+          restart: always
+          healthcheck:
+            disable: false
+
+      volumes:
+        model-cache:
+
+- name: Start Immich stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ immich_stacks_dir }}/immich"
+  register: immich_start
+  changed_when: "'Started' in immich_start.stderr or 'Created' in immich_start.stderr or 'Recreated' in immich_start.stderr"
+
+- name: Wait for Immich server port
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ immich_web_port }}"
+    timeout: 120
+
+- name: Verify Immich containers are running
+  ansible.builtin.command:
+    cmd: docker compose ps
+    chdir: "{{ immich_stacks_dir }}/immich"
+  register: immich_ps
+  changed_when: false
+
+- name: Display Immich container status
+  ansible.builtin.debug:
+    msg: "{{ immich_ps.stdout_lines }}"

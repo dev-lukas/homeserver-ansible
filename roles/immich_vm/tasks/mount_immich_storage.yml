@@ -1,0 +1,44 @@
+---
+# Configure NFS mount for Immich library storage
+
+- name: Create Immich NFS mount directory
+  ansible.builtin.file:
+    path: "{{ immich_nfs_mount }}"
+    state: directory
+    mode: "0755"
+
+- name: Add Immich NFS mount to fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: "^{{ immich_nfs_server }}:{{ immich_nfs_export }}"
+    line: "{{ immich_nfs_server }}:{{ immich_nfs_export }} {{ immich_nfs_mount }} nfs4 defaults,_netdev,noatime 0 0"
+    state: present
+
+- name: Mount Immich NFS share
+  ansible.builtin.mount:
+    path: "{{ immich_nfs_mount }}"
+    src: "{{ immich_nfs_server }}:{{ immich_nfs_export }}"
+    fstype: nfs4
+    opts: defaults,_netdev,noatime
+    state: mounted
+
+- name: Verify Immich NFS mount is active
+  ansible.builtin.command:
+    cmd: "mountpoint -q {{ immich_nfs_mount }}"
+  changed_when: false
+
+- name: Create Immich upload directory
+  ansible.builtin.file:
+    path: "{{ immich_upload_location }}"
+    state: directory
+    mode: "0755"
+
+- name: Display Immich NFS mount status
+  ansible.builtin.command:
+    cmd: "df -h {{ immich_nfs_mount }}"
+  register: immich_nfs_mount_status
+  changed_when: false
+
+- name: Show Immich NFS mount status
+  ansible.builtin.debug:
+    msg: "{{ immich_nfs_mount_status.stdout_lines }}"

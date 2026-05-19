@@ -1,0 +1,45 @@
+---
+# Install and configure UFW firewall
+
+- name: Install UFW
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+- name: Set UFW default incoming policy to deny
+  community.general.ufw:
+    direction: incoming
+    default: "{{ immich_ufw_default_incoming }}"
+
+- name: Set UFW default outgoing policy to allow
+  community.general.ufw:
+    direction: outgoing
+    default: "{{ immich_ufw_default_outgoing }}"
+
+- name: Allow SSH through UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ immich_ssh_port }}"
+    proto: tcp
+    comment: "SSH"
+
+- name: Allow Immich web port through UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ immich_web_port }}"
+    proto: tcp
+    comment: "Immich"
+
+- name: Enable UFW
+  community.general.ufw:
+    state: enabled
+
+- name: Check UFW status
+  ansible.builtin.command:
+    cmd: ufw status verbose
+  register: ufw_status
+  changed_when: false
+
+- name: Display UFW status
+  ansible.builtin.debug:
+    msg: "{{ ufw_status.stdout_lines }}"

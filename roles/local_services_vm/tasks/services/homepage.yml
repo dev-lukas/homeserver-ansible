@@ -161,7 +161,7 @@
             columns: 3
         - Media Services:
             style: row
-            columns: 4
+            columns: 5
         - Infrastructure:
             style: row
             columns: 3
@@ -250,6 +250,10 @@
               icon: mdi-play-circle
               href: https://watch.{{ reverse_proxy_domain }}
               description: Media streaming
+          - Immich:
+              icon: mdi-image-multiple
+              href: https://photos.{{ reverse_proxy_domain }}
+              description: Photo backup
           - Sonarr:
               icon: mdi-television-classic
               href: https://sonarr.{{ reverse_proxy_domain }}

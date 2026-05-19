@@ -99,7 +99,7 @@
   gather_facts: false
   tags: [adguard, maintenance]
   vars:
-    adguard_vmid: "{{ hostvars['proxmox-root']['adguard_vmid'] | default(102) }}"
+    adguard_vmid: "{{ hostvars['proxmox-root']['adguard_vmid'] | default(100) }}"
   tasks:
     - name: Update Alpine packages
       ansible.builtin.command:
@@ -319,6 +319,74 @@
       ansible.builtin.debug:
         msg: |
           Media Services VM updated.
+          Packages upgraded: {{ apt_upgrade.changed }}
+          Pruned: {{ prune_result.stdout_lines[-1] | default('Done') }}
+
+  post_tasks:
+    - name: Remove deploy key from Proxmox
+      ansible.builtin.file:
+        path: "{{ ssh_key_path }}"
+        state: absent
+
+    - name: Remove local deploy key
+      ansible.builtin.file:
+        path: /tmp/.ansible_deploy_key
+        state: absent
+      delegate_to: localhost
+      become: false
+      run_once: true
+      tags: always
+
+- name: Maintenance - Immich VM
+  hosts: proxmox-root
+  gather_facts: false
+  tags: [immich, maintenance]
+  vars:
+    immich_ip: "{{ hostvars['proxmox-root']['immich_ip'] | default('192.168.178.14') }}"
+    stacks_dir: "/opt/stacks"
+    ssh_key_path: "/tmp/.ansible_deploy_key"
+    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ssh_key_path }}"
+
+  pre_tasks:
+    - name: Write deploy key to temp file on Proxmox
+      ansible.builtin.copy:
+        content: "{{ vault_ansible_deploy_private_key }}"
+        dest: "{{ ssh_key_path }}"
+        mode: "0600"
+      no_log: true
+
+  tasks:
+    - name: Update apt cache on VM
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ immich_ip }} apt-get update"
+      changed_when: false
+
+    - name: Upgrade packages on VM
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ immich_ip }} 'DEBIAN_FRONTEND=noninteractive apt-get upgrade -y'"
+      register: apt_upgrade
+      changed_when: "'0 upgraded' not in apt_upgrade.stdout"
+
+    - name: Autoremove unused packages
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ immich_ip }} 'DEBIAN_FRONTEND=noninteractive apt-get autoremove -y'"
+      changed_when: false
+
+    - name: Update Immich stack
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ immich_ip }} 'cd {{ stacks_dir }}/immich && docker compose pull && docker compose up -d'"
+      changed_when: false
+
+    - name: Prune unused Docker images
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ immich_ip }} docker image prune -f"
+      register: prune_result
+      changed_when: false
+
+    - name: Display update summary
+      ansible.builtin.debug:
+        msg: |
+          Immich VM updated.
           Packages upgraded: {{ apt_upgrade.changed }}
           Pruned: {{ prune_result.stdout_lines[-1] | default('Done') }}
 
