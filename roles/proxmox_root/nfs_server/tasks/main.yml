@@ -34,6 +34,15 @@
     - /mediapool/media/downloads
     - /mediapool/media/downloads/incomplete
 
+- name: Create Immich library directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /mediapool/immich
+    - /mediapool/immich/library
+
 # Jellyfin transcoding cache - owned by UID 100102 (unprivileged LXC maps UID 102→100102)
 # Jellyfin runs as UID 102 inside the container
 - name: Create transcoding directory for Jellyfin
@@ -74,6 +83,11 @@
     state: started
     enabled: true
 
+- name: Apply NFS exports before dependent roles mount them
+  ansible.builtin.command:
+    cmd: exportfs -ra
+  changed_when: false
+
 - name: Verify NFS exports
   ansible.builtin.command:
     cmd: exportfs -v
@@ -84,7 +98,14 @@
   ansible.builtin.debug:
     msg: "{{ nfs_exports_status.stdout_lines }}"
 
-# Configure Proxmox cluster firewall to allow NFS traffic from media_services_vm only
+- name: Verify Immich NFS export is active
+  ansible.builtin.assert:
+    that:
+      - "'/mediapool/immich' in nfs_exports_status.stdout"
+      - "immich_ip in nfs_exports_status.stdout"
+    fail_msg: "Immich export is not active for {{ immich_ip }}. Current exports: {{ nfs_exports_status.stdout }}"
+
+# Configure Proxmox cluster firewall to allow NFS traffic from approved VMs only
 - name: Ensure cluster firewall file exists
   ansible.builtin.copy:
     dest: /etc/pve/firewall/cluster.fw
@@ -107,4 +128,11 @@
       IN ACCEPT -source {{ media_services_ip }} -p udp -dport 111 -log nolog
       IN ACCEPT -source {{ media_services_ip }} -p tcp -dport 2049 -log nolog
       IN ACCEPT -source {{ media_services_ip }} -p udp -dport 2049 -log nolog
+      IN ACCEPT -source {{ immich_ip }} -p tcp -dport 111 -log nolog
+      IN ACCEPT -source {{ immich_ip }} -p udp -dport 111 -log nolog
+      IN ACCEPT -source {{ immich_ip }} -p tcp -dport 2049 -log nolog
+      IN ACCEPT -source {{ immich_ip }} -p udp -dport 2049 -log nolog
   notify: Reload pve-firewall
+
+- name: Apply NFS firewall rules before dependent roles mount shares
+  ansible.builtin.meta: flush_handlers

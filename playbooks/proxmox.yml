@@ -80,6 +80,13 @@
         - storage
         - media
 
+    - role: immich_vm
+      tags:
+        - immich
+        - photos
+        - docker
+        - vm
+
     - role: local_services_vm
       tags:
         - local_services
