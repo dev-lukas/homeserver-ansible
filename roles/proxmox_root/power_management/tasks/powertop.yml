@@ -1,18 +1,30 @@
 ---
 # Powertop installation and configuration
 
-- name: Install powertop
+- name: Install powertop and AutoASPM dependencies
   ansible.builtin.apt:
-    name: powertop
+    name:
+      - pciutils
+      - powertop
+      - python3
     state: present
     update_cache: yes
     cache_valid_time: 3600
+
+- name: Install AutoASPM helper
+  ansible.builtin.copy:
+    src: autoaspm.py
+    dest: /usr/local/sbin/autoaspm.py
+    owner: root
+    group: root
+    mode: "0755"
+  when: autoaspm_enabled | default(true)
 
 - name: Configure powertop auto-tune cron job
   ansible.builtin.cron:
     name: "powertop auto-tune"
     special_time: reboot
-    job: "/usr/sbin/powertop --auto-tune"
+    job: "/usr/sbin/powertop --auto-tune{{ ' && /usr/local/sbin/autoaspm.py' if autoaspm_enabled | default(true) else '' }}"
     user: root
     state: "{{ 'present' if powertop_auto_tune | default(true) else 'absent' }}"
 
@@ -20,3 +32,10 @@
   ansible.builtin.command: /usr/sbin/powertop --auto-tune
   changed_when: false
   when: powertop_auto_tune | default(true)
+
+- name: Run AutoASPM now
+  ansible.builtin.command: /usr/local/sbin/autoaspm.py
+  changed_when: false
+  when:
+    - powertop_auto_tune | default(true)
+    - autoaspm_enabled | default(true)
