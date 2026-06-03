@@ -1,0 +1,118 @@
+---
+# Install the newest Micron Storage Executive CLI from Micron's download page.
+
+- name: Ensure msecli cache directory exists
+  ansible.builtin.file:
+    path: "{{ micron_msecli_cache_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Fetch Micron Storage Executive download page
+  ansible.builtin.uri:
+    url: "{{ micron_msecli_download_page }}"
+    return_content: true
+  register: micron_msecli_page
+  changed_when: false
+
+- name: Extract Linux msecli download links
+  ansible.builtin.set_fact:
+    micron_msecli_download_matches: "{{ micron_msecli_page.content | regex_findall('href=\"([^\"]*msecli-linux\\.run)\"') }}"
+
+- name: Ensure Linux msecli download link was found
+  ansible.builtin.assert:
+    that:
+      - micron_msecli_download_matches | length > 0
+    fail_msg: "Could not find msecli-linux.run on {{ micron_msecli_download_page }}"
+
+- name: Select Linux msecli download URL
+  ansible.builtin.set_fact:
+    micron_msecli_download_href: >-
+      {{
+        (micron_msecli_download_matches | select('match', '^https?://') | list | first)
+        | default(micron_msecli_download_matches | first)
+      }}
+
+- name: Normalize Linux msecli download URL
+  ansible.builtin.set_fact:
+    micron_msecli_download_url: >-
+      {{
+        micron_msecli_download_href
+        if micron_msecli_download_href is match('^https?://')
+        else micron_msecli_base_url ~ micron_msecli_download_href
+      }}
+
+- name: Set msecli installer cache path
+  ansible.builtin.set_fact:
+    micron_msecli_installer_path: "{{ micron_msecli_cache_dir }}/msecli-linux-{{ micron_msecli_download_url | hash('sha1') }}.run"
+
+- name: Download Micron Storage Executive CLI installer
+  ansible.builtin.get_url:
+    url: "{{ micron_msecli_download_url }}"
+    dest: "{{ micron_msecli_installer_path }}"
+    mode: "0755"
+  register: micron_msecli_download
+
+- name: Read downloaded msecli installer version
+  ansible.builtin.command:
+    cmd: "{{ micron_msecli_installer_path }} --version"
+  register: micron_msecli_installer_version
+  changed_when: false
+
+- name: Read installed msecli version
+  ansible.builtin.command:
+    cmd: "{{ micron_msecli_symlink_path }} -V"
+  register: micron_msecli_installed_version
+  changed_when: false
+  failed_when: false
+
+- name: Determine whether msecli install is needed
+  ansible.builtin.set_fact:
+    micron_msecli_should_install: >-
+      {{
+        micron_msecli_installed_version.rc != 0
+        or micron_msecli_download.changed
+      }}
+
+- name: Install Micron Storage Executive CLI
+  ansible.builtin.command:
+    cmd: >-
+      {{ micron_msecli_installer_path }}
+      --mode unattended
+      --unattendedmodeui none
+      --prefix {{ micron_msecli_install_dir }}
+  when: micron_msecli_should_install | bool
+  register: micron_msecli_install
+
+- name: Find installed msecli binary
+  ansible.builtin.find:
+    paths: "{{ micron_msecli_install_dir }}"
+    patterns: "msecli"
+    file_type: file
+    recurse: true
+  register: micron_msecli_binary_find
+  when: micron_msecli_should_install | bool
+
+- name: Ensure installed msecli binary was found
+  ansible.builtin.assert:
+    that:
+      - micron_msecli_binary_find.files | length > 0
+    fail_msg: "Could not find msecli binary under {{ micron_msecli_install_dir }}"
+  when: micron_msecli_should_install | bool
+
+- name: Link msecli into system sbin
+  ansible.builtin.file:
+    src: "{{ (micron_msecli_binary_find.files | sort(attribute='path') | first).path }}"
+    dest: "{{ micron_msecli_symlink_path }}"
+    state: link
+    force: true
+  when: micron_msecli_should_install | bool
+
+- name: Display installed msecli version
+  ansible.builtin.command:
+    cmd: "{{ micron_msecli_symlink_path }} -V"
+  register: micron_msecli_final_version
+  changed_when: false
+
+- name: Show msecli version
+  ansible.builtin.debug:
+    msg: "{{ micron_msecli_final_version.stdout }}"

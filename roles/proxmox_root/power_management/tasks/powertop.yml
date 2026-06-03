@@ -24,9 +24,17 @@
   ansible.builtin.cron:
     name: "powertop auto-tune"
     special_time: reboot
-    job: "/usr/sbin/powertop --auto-tune{{ ' && /usr/local/sbin/autoaspm.py' if autoaspm_enabled | default(true) else '' }}"
+    job: "/usr/sbin/powertop --auto-tune"
     user: root
     state: "{{ 'present' if powertop_auto_tune | default(true) else 'absent' }}"
+
+- name: Configure AutoASPM cron job
+  ansible.builtin.cron:
+    name: "Realtek RTL8127 ASPM"
+    special_time: reboot
+    job: "/usr/local/sbin/autoaspm.py"
+    user: root
+    state: "{{ 'present' if autoaspm_enabled | default(true) else 'absent' }}"
 
 - name: Run powertop auto-tune now
   ansible.builtin.command: /usr/sbin/powertop --auto-tune
@@ -37,5 +45,4 @@
   ansible.builtin.command: /usr/local/sbin/autoaspm.py
   changed_when: false
   when:
-    - powertop_auto_tune | default(true)
     - autoaspm_enabled | default(true)
