@@ -141,23 +141,58 @@
 
 # Ensure cluster firewall file exists with base configuration
 - name: Ensure cluster firewall base config exists
-  ansible.builtin.copy:
-    dest: /etc/pve/firewall/cluster.fw
-    content: |
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      mkdir -p /etc/pve/firewall
+      if [ ! -e /etc/pve/firewall/cluster.fw ]; then
+        cat > /etc/pve/firewall/cluster.fw <<'FWEOF'
       [OPTIONS]
       policy_in: DROP
       enable: 1
 
       [RULES]
-    mode: "0640"
-    force: false
+      FWEOF
+        chmod 0640 /etc/pve/firewall/cluster.fw || true
+        echo changed
+      else
+        echo unchanged
+      fi
+  register: glances_cluster_fw_base
+  changed_when: "glances_cluster_fw_base.stdout == 'changed'"
 
 # Configure Proxmox host firewall to allow Glances access from internal network
 - name: Configure Proxmox cluster firewall for Glances
-  ansible.builtin.blockinfile:
-    path: /etc/pve/firewall/cluster.fw
-    marker: "# {mark} ANSIBLE MANAGED - Glances"
-    insertafter: "\\[RULES\\]"
-    block: |
-      IN ACCEPT -source {{ internal_subnet }} -p tcp -dport {{ glances_port }} -log nolog
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      file=/etc/pve/firewall/cluster.fw
+      begin="# BEGIN ANSIBLE MANAGED - Glances"
+      end="# END ANSIBLE MANAGED - Glances"
+      block="IN ACCEPT -source {{ internal_subnet }} -p tcp -dport {{ glances_port }} -log nolog"
+
+      current="$(cat "$file")"
+      without_block="$(
+        awk -v begin="$begin" -v end="$end" '
+          $0 == begin { skip = 1; next }
+          $0 == end { skip = 0; next }
+          !skip { print }
+        ' "$file"
+      )"
+      desired="$(
+        printf '%s\n' "$without_block" | awk -v begin="$begin" -v end="$end" -v block="$block" '
+          BEGIN { inserted = 0 }
+          { print; if ($0 == "[RULES]" && !inserted) { print begin; print block; print end; inserted = 1 } }
+          END { if (!inserted) { print ""; print "[RULES]"; print begin; print block; print end } }
+        '
+      )"
+
+      if [ "$current" != "$desired" ]; then
+        printf '%s\n' "$desired" > "$file"
+        echo changed
+      else
+        echo unchanged
+      fi
+  register: glances_cluster_fw_rules
+  changed_when: "glances_cluster_fw_rules.stdout == 'changed'"
   notify: Reload pve-firewall

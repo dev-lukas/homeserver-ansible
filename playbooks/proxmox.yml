@@ -48,6 +48,12 @@
         - glances
         - monitoring
 
+    - role: proxmox_root/micron_msecli
+      tags:
+        - msecli
+        - micron
+        - ssd
+
     - role: proxmox_root/rasdaemon
       tags:
         - rasdaemon
