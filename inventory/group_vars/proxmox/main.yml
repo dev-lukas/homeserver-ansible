@@ -6,4 +6,5 @@ internal_subnet: "192.168.178.0/24"
 
 # Power management settings
 powertop_auto_tune: true
+autoaspm_enabled: true
 ltr_ignore_enabled: true
