@@ -32,7 +32,7 @@
   ansible.builtin.cron:
     name: "Realtek RTL8127 ASPM"
     special_time: reboot
-    job: "/usr/local/sbin/autoaspm.py"
+    job: "(sleep 90 && /usr/local/sbin/autoaspm.py)"
     user: root
     state: "{{ 'present' if autoaspm_enabled | default(true) else 'absent' }}"
 
