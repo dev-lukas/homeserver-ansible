@@ -1,0 +1,98 @@
+---
+# Hardened apt maintenance for a Debian guest reached over SSH through the
+# Proxmox jump host. Reused by every guest VM play so the upgrade hardening,
+# retries and reboot handling live in exactly one place.
+#
+# Required vars (passed by the caller via include_tasks `vars:`):
+#   maint_label : human-readable host name, used in task names and the summary
+#   maint_ip    : IP address of the target VM
+#   ssh_opts    : SSH option string (defined per play)
+# Optional vars:
+#   maint_auto_reboot : reboot the VM when an update requires it (default: true)
+#
+# Relies on the global `apt_maintenance_script` (inventory/group_vars/all.yml).
+
+- name: "Upgrade packages (lock-aware, self-healing, retried) on {{ maint_label }}"
+  ansible.builtin.shell:
+    cmd: "ssh {{ ssh_opts }} root@{{ maint_ip }} bash -s"
+    stdin: "{{ apt_maintenance_script }}"
+  register: maint_apt
+  changed_when: "'PKGS_CHANGED' in maint_apt.stdout"
+  until: maint_apt.rc == 0
+  retries: 3
+  delay: 30
+
+- name: "Check whether a reboot is required on {{ maint_label }}"
+  ansible.builtin.shell:
+    cmd: >-
+      ssh {{ ssh_opts }} root@{{ maint_ip }}
+      'test -f /var/run/reboot-required && echo REBOOT_REQUIRED || echo NO_REBOOT'
+  register: maint_reboot
+  changed_when: false
+
+# Capture the kernel boot id *before* rebooting. It changes on every boot, so
+# comparing against it afterwards proves the box actually went down and came
+# back up — without this, the wait below can connect to the not-yet-rebooted
+# system, see it "running", and let later tasks race the real reboot.
+- name: "Capture boot id before reboot on {{ maint_label }}"
+  ansible.builtin.shell:
+    cmd: "ssh {{ ssh_opts }} root@{{ maint_ip }} 'cat /proc/sys/kernel/random/boot_id'"
+  register: maint_bootid_before
+  changed_when: false
+  when:
+    - maint_auto_reboot | default(true) | bool
+    - "'REBOOT_REQUIRED' in maint_reboot.stdout"
+
+- name: "Reboot to apply kernel/library update on {{ maint_label }}"
+  ansible.builtin.shell:
+    cmd: "ssh {{ ssh_opts }} root@{{ maint_ip }} 'systemctl reboot' || true"
+  changed_when: true
+  when:
+    - maint_auto_reboot | default(true) | bool
+    - "'REBOOT_REQUIRED' in maint_reboot.stdout"
+
+- name: "Wait for a fresh boot id (proves reboot completed) on {{ maint_label }}"
+  ansible.builtin.shell:
+    cmd: >-
+      ssh {{ ssh_opts }} -o ConnectTimeout=5 root@{{ maint_ip }}
+      'cat /proc/sys/kernel/random/boot_id'
+  register: maint_bootid_after
+  changed_when: false
+  failed_when: false
+  retries: 60
+  delay: 10
+  until:
+    - maint_bootid_after.rc == 0
+    - (maint_bootid_after.stdout | trim) | length > 0
+    - (maint_bootid_after.stdout | trim) != (maint_bootid_before.stdout | trim)
+  when:
+    - maint_auto_reboot | default(true) | bool
+    - "'REBOOT_REQUIRED' in maint_reboot.stdout"
+
+- name: "Wait for all services to come up after reboot on {{ maint_label }}"
+  ansible.builtin.shell:
+    cmd: >-
+      ssh {{ ssh_opts }} -o ConnectTimeout=5 root@{{ maint_ip }}
+      'systemctl is-system-running --wait'
+  register: maint_boot
+  # is-system-running returns non-zero while booting; 'running' = 0, while
+  # 'degraded' is non-zero but still means boot completed, so accept it too.
+  until: maint_boot.rc == 0 or ('degraded' in maint_boot.stdout)
+  retries: 30
+  delay: 10
+  changed_when: false
+  failed_when: false
+  when:
+    - maint_auto_reboot | default(true) | bool
+    - "'REBOOT_REQUIRED' in maint_reboot.stdout"
+
+- name: "Record maintenance result for {{ maint_label }}"
+  ansible.builtin.set_fact:
+    maintenance_report: "{{ maintenance_report | default([]) + [_entry] }}"
+  vars:
+    _rebooted: "{{ (maint_auto_reboot | default(true) | bool) and ('REBOOT_REQUIRED' in maint_reboot.stdout) }}"
+    _entry:
+      host: "{{ maint_label }}"
+      upgraded: "{{ maint_apt.changed }}"
+      reboot_required: "{{ 'REBOOT_REQUIRED' in maint_reboot.stdout }}"
+      rebooted: "{{ _rebooted }}"

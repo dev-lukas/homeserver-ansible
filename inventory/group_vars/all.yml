@@ -8,3 +8,29 @@ ssh_authorized_keys:
   - "{{ vault_ansible_deploy_public_key | default(omit) }}"
 # Timezone (adjust as needed)
 timezone: "Europe/Berlin"
+
+# Hardened apt upgrade routine, single source of truth for all Debian guests.
+# Piped into `bash -s` on each target (over SSH or `pct exec`), which avoids
+# any shell-quoting issues. Reliability features:
+#   - DPkg::Lock::Timeout=600 : wait (up to 10 min) for the lock instead of
+#     failing instantly when unattended-upgrades / apt-daily is running. This
+#     is the main fix for upgrades failing "when a lot of updates happen".
+#   - --force-confdef/--force-confold : never block on an interactive
+#     config-file prompt during large upgrades.
+#   - dpkg --configure -a : recover automatically from a previously
+#     interrupted run instead of staying wedged on every future run.
+# Emits the marker PKGS_CHANGED on stdout when something was actually upgraded,
+# so Ansible can report an accurate changed/ok status.
+apt_maintenance_script: |
+  set -euo pipefail
+  export DEBIAN_FRONTEND=noninteractive
+  APT_OPTS="-o DPkg::Lock::Timeout=600 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
+  dpkg --configure -a || true
+  apt-get $APT_OPTS update
+  upgrade_out=$(apt-get $APT_OPTS -y upgrade)
+  printf '%s\n' "$upgrade_out"
+  apt-get $APT_OPTS -y autoremove
+  apt-get $APT_OPTS clean
+  if ! printf '%s\n' "$upgrade_out" | grep -q '^0 upgraded, 0 newly installed, 0 to remove'; then
+    echo "PKGS_CHANGED"
+  fi

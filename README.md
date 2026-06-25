@@ -101,6 +101,45 @@ roles/
 3. Create a playbook in `playbooks/<group_name>.yml`
 4. Import it in `playbooks/site.yml`
 
+## Maintenance
+
+Run the full fleet update (Proxmox host + all LXCs/VMs):
+
+```bash
+ansible-playbook playbooks/maintenance.yml --ask-vault-pass
+# Target a single component via tags, e.g.:
+ansible-playbook playbooks/maintenance.yml --ask-vault-pass --tags media_services
+```
+
+### Upgrade reliability
+
+The apt upgrade routine for every Debian guest is defined once as
+`apt_maintenance_script` in `inventory/group_vars/all.yml` and reused via
+`playbooks/tasks/maintenance_apt.yml`. It is designed to survive the
+"too many updates" failures:
+
+- **Lock-aware** — `DPkg::Lock::Timeout=600` makes apt *wait* for a running
+  `unattended-upgrades`/`apt-daily` run instead of failing instantly on the
+  dpkg lock. This was the main cause of the upgrade step failing.
+- **Self-healing** — runs `dpkg --configure -a` first to recover from any
+  previously interrupted run.
+- **Non-interactive** — `--force-confdef/--force-confold` so a changed config
+  file never blocks the run on a prompt.
+- **Retried** — transient apt/network errors are retried (3×, 30s apart).
+
+### Reboot policy
+
+When an update sets `/var/run/reboot-required`, the playbook:
+
+- **Auto-reboots** Local Services, Media Services, Immich and CI Runner VMs,
+  then waits for them to finish booting before continuing.
+- **Reports only** (never reboots) the Proxmox host and the Development VM.
+
+Toggle per host with `maint_auto_reboot` in the relevant play. The final
+"Maintenance summary" play prints, per host, whether packages were upgraded,
+whether a reboot is required, and whether it was rebooted — plus an
+`ACTION NEEDED` line listing any hosts with a still-pending reboot.
+
 ## Features
 
 - **SSH Key Management**: Automatically deploys SSH keys to all hosts
