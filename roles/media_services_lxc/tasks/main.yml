@@ -1,0 +1,214 @@
+---
+# Media services LXC: gluetun VPN + *arr stack in an unprivileged Docker-in-LXC
+# container. Direct ZFS bind mount for the media library and /dev/net/tun
+# passthrough for gluetun. Self-contained (own copies of the compose tasks) so
+# media_services_vm can be deleted after migration.
+
+# --- Host prerequisites ---
+
+- name: Ensure fuse + tun modules are loaded on the host
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+    persistent: present
+  loop:
+    - fuse
+    - tun
+
+- name: Download Debian LXC template if not present
+  ansible.builtin.command:
+    cmd: "pveam download local {{ media_lxc_template_download }}"
+  args:
+    creates: "/var/lib/vz/template/cache/{{ media_lxc_template_download }}"
+
+# Media library directory tree on the host ZFS pool (bind-mounted into the LXC).
+# Relocated from the former nfs_server role. Non-recursive (the library already
+# exists and is 1000-owned; a recursive chown over 157G every run is avoided).
+- name: Ensure media library subdirectories exist (owned by PUID/PGID 1000)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0775"
+  loop:
+    - /mediapool/media
+    - /mediapool/media/tv
+    - /mediapool/media/movies
+    - /mediapool/media/anime
+    - /mediapool/media/anime-movies
+    - /mediapool/media/documentaries
+    - /mediapool/media/downloads
+    - /mediapool/media/downloads/incomplete
+
+# Jellyfin transcoding cache - owned by the jellyfin LXC's mapped UID (102 -> 100102).
+- name: Ensure Jellyfin transcoding directory exists
+  ansible.builtin.file:
+    path: /mediapool/media/transcoding
+    state: directory
+    owner: "100102"
+    group: "100105"
+    mode: "0755"
+
+- name: Check if LXC container exists
+  ansible.builtin.command:
+    cmd: "pct status {{ media_lxc_vmid }}"
+  register: media_container_status
+  failed_when: false
+  changed_when: false
+
+- name: Create media LXC container
+  ansible.builtin.command:
+    cmd: >
+      pct create {{ media_lxc_vmid }} {{ media_lxc_template }}
+      --hostname {{ media_lxc_hostname }}
+      --storage {{ media_lxc_storage }}
+      --rootfs {{ media_lxc_storage }}:{{ media_lxc_rootfs_size }}
+      --memory {{ media_lxc_memory }}
+      --swap {{ media_lxc_swap }}
+      --cores {{ media_lxc_cores }}
+      --net0 name=eth0,bridge={{ media_lxc_bridge }},ip={{ media_lxc_ip }}/{{ media_lxc_netmask }},gw={{ media_lxc_gateway }}
+      --nameserver {{ media_lxc_nameserver }}
+      --unprivileged {{ '1' if media_lxc_unprivileged else '0' }}
+      --features nesting={{ '1' if media_lxc_nesting else '0' }},keyctl={{ '1' if media_lxc_keyctl else '0' }},fuse={{ '1' if media_lxc_fuse else '0' }}
+      --onboot 1
+      --start 0
+  when: media_container_status.rc != 0
+
+# --- UID/GID mapping (container 1000 -> host 1000), same as jellyfin/apps ---
+
+- name: Configure subuid for root user (allow mapping UID 1000)
+  ansible.builtin.lineinfile:
+    path: /etc/subuid
+    regexp: "^root:1000:1$"
+    line: "root:1000:1"
+    create: true
+
+- name: Configure subgid for root user (allow mapping GID 1000)
+  ansible.builtin.lineinfile:
+    path: /etc/subgid
+    regexp: "^root:1000:1$"
+    line: "root:1000:1"
+    create: true
+
+- name: Remove any existing lxc.idmap entries to prevent duplicates
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ media_lxc_vmid }}.conf"
+    regexp: "^lxc\\.idmap:"
+    state: absent
+
+- name: Configure LXC UID/GID mapping
+  ansible.builtin.blockinfile:
+    path: "/etc/pve/lxc/{{ media_lxc_vmid }}.conf"
+    marker: "# {mark} ANSIBLE MANAGED - UID/GID MAPPING"
+    block: |
+      lxc.idmap: u 0 100000 1000
+      lxc.idmap: g 0 100000 1000
+      lxc.idmap: u 1000 1000 1
+      lxc.idmap: g 1000 1000 1
+      lxc.idmap: u 1001 101001 64535
+      lxc.idmap: g 1001 101001 64535
+
+# --- /dev/net/tun passthrough for gluetun (unprivileged LXC) ---
+
+- name: Configure /dev/net/tun passthrough for gluetun
+  ansible.builtin.blockinfile:
+    path: "/etc/pve/lxc/{{ media_lxc_vmid }}.conf"
+    marker: "# {mark} ANSIBLE MANAGED - TUN PASSTHROUGH"
+    block: |
+      lxc.cgroup2.devices.allow: c 10:200 rwm
+      lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file 0 0
+
+- name: Configure media library bind mount
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ media_lxc_vmid }}.conf"
+    regexp: "^mp0:"
+    line: "mp0: {{ media_lxc_media_source }},mp={{ media_lxc_media_mp }}"
+    insertafter: EOF
+
+# --- Start + SSH bootstrap ---
+
+- name: Start the LXC container
+  ansible.builtin.command:
+    cmd: "pct start {{ media_lxc_vmid }}"
+  register: media_start_result
+  failed_when: false
+  changed_when: media_start_result.rc == 0
+
+- name: Wait for container to be ready
+  ansible.builtin.pause:
+    seconds: 10
+  when: media_start_result.changed
+
+- name: Render deploy authorized_keys to temp file (host)
+  ansible.builtin.copy:
+    dest: /tmp/media_lxc_authorized_keys
+    mode: "0644"
+    content: |
+      {{ vault_ansible_deploy_public_key }}
+      {% for key in ssh_authorized_keys | default([]) %}{% if key is string %}{{ key }}
+      {% endif %}{% endfor %}
+  no_log: true
+
+- name: Ensure /root/.ssh exists in container
+  ansible.builtin.command:
+    cmd: "pct exec {{ media_lxc_vmid }} -- install -d -m 700 /root/.ssh"
+  changed_when: false
+
+- name: Push authorized_keys into container
+  ansible.builtin.command:
+    cmd: "pct push {{ media_lxc_vmid }} /tmp/media_lxc_authorized_keys /root/.ssh/authorized_keys --perms 600"
+  changed_when: false
+
+- name: Remove temp authorized_keys file
+  ansible.builtin.file:
+    path: /tmp/media_lxc_authorized_keys
+    state: absent
+
+- name: Ensure openssh-server is installed and enabled in container
+  ansible.builtin.command:
+    cmd: >
+      pct exec {{ media_lxc_vmid }} -- bash -lc
+      "apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server && systemctl enable --now ssh"
+  changed_when: false
+
+- name: Wait for container SSH to be reachable
+  ansible.builtin.wait_for:
+    host: "{{ media_lxc_ip }}"
+    port: 22
+    timeout: 120
+
+- name: Add media LXC to in-memory inventory
+  ansible.builtin.add_host:
+    name: "{{ media_lxc_hostname }}"
+    ansible_host: "{{ media_lxc_ip }}"
+    ansible_user: root
+    ansible_ssh_private_key_file: /tmp/.ansible_deploy_key
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30"
+    ansible_ssh_retries: 3
+    groups: media_lxc_target
+
+# --- Configure the container (over SSH, delegated) ---
+
+- name: Configure the media LXC
+  block:
+    - name: Install base packages
+      ansible.builtin.include_tasks: base.yml
+
+    - name: Apply security hardening
+      ansible.builtin.include_tasks: harden.yml
+
+    - name: Install Docker (fuse-overlayfs)
+      ansible.builtin.include_tasks: docker.yml
+
+    - name: Deploy media Docker Compose stacks
+      ansible.builtin.include_tasks: stacks.yml
+
+    - name: Configure Docker image pruning
+      ansible.builtin.include_tasks: docker_prune.yml
+
+  delegate_to: "{{ media_lxc_hostname }}"
+
+# Proxmox host firewall (runs on the proxmox host, not delegated).
+- name: Configure Proxmox host firewall for the media LXC
+  ansible.builtin.include_tasks: proxmox_firewall.yml

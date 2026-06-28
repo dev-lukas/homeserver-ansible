@@ -80,12 +80,6 @@
         - lxc
         - containers
 
-    - role: proxmox_root/nfs_server
-      tags:
-        - nfs
-        - storage
-        - media
-
     # Combined apps LXC (Immich + local web services). Replaced the former
     # immich_vm + local_services_vm roles (now removed); it is the single source.
     - role: local_services_lxc
@@ -103,12 +97,14 @@
         - lxc
         - containers
 
-    - role: media_services_vm
+    # Media services LXC (gluetun + *arr). Replaced the former media_services_vm
+    # role (now removed); it is the single source.
+    - role: media_services_lxc
       tags:
-        - media_services
+        - media_lxc
         - arr
-        - docker
-        - vm
+        - lxc
+        - containers
 
     - role: dev_vm
       tags:
