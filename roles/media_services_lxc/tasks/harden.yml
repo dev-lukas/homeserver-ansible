@@ -1,5 +1,8 @@
 ---
-# Security hardening for Media Services VM (Debian)
+# Security hardening inside the apps LXC (runs over SSH, delegated).
+# Matches the jellyfin LXC / VM hardening: SSH key-only + sysctl. In-guest UFW
+# is intentionally omitted - this is a Docker host (Docker manages its own
+# iptables) behind the Proxmox host firewall (see proxmox_firewall.yml).
 
 - name: Disable root password login via SSH
   ansible.builtin.lineinfile:
@@ -7,31 +10,44 @@
     regexp: "^#?PermitRootLogin"
     line: "PermitRootLogin prohibit-password"
     backup: true
-  notify: Restart SSH
+  register: apps_sshd_root
 
 - name: Disable password authentication for SSH
   ansible.builtin.lineinfile:
     path: /etc/ssh/sshd_config
     regexp: "^#?PasswordAuthentication"
     line: "PasswordAuthentication no"
-  notify: Restart SSH
+  register: apps_sshd_pw
+
+- name: Restart SSH if config changed
+  ansible.builtin.systemd:
+    name: ssh
+    state: restarted
+  when: apps_sshd_root is changed or apps_sshd_pw is changed
 
 - name: Configure sysctl security settings
   ansible.builtin.copy:
     dest: /etc/sysctl.d/99-security.conf
+    mode: "0644"
     content: |
       # Ignore ICMP redirects
       net.ipv4.conf.all.accept_redirects = 0
       net.ipv6.conf.all.accept_redirects = 0
-      
+
       # Ignore source-routed packets
       net.ipv4.conf.all.accept_source_route = 0
       net.ipv6.conf.all.accept_source_route = 0
-      
+
       # Log martian packets
       net.ipv4.conf.all.log_martians = 1
-      
+
       # Enable SYN cookies
       net.ipv4.tcp_syncookies = 1
-    mode: "0644"
-  notify: Apply sysctl settings
+
+# Some net.* keys are read-only in an unprivileged container netns; apply
+# best-effort so a sandboxed key never fails the run.
+- name: Apply sysctl settings (best-effort in LXC)
+  ansible.builtin.command:
+    cmd: sysctl -p /etc/sysctl.d/99-security.conf
+  changed_when: false
+  failed_when: false

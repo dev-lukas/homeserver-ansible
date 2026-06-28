@@ -1,0 +1,71 @@
+---
+# Media Services LXC role defaults
+# Unprivileged Docker-in-LXC (nesting/keyctl/fuse) with a direct ZFS bind mount
+# for the media library and a /dev/net/tun passthrough for the gluetun VPN.
+
+# --- LXC settings ---
+media_lxc_vmid: 104            # 104 is free (old local-services VM destroyed)
+media_lxc_hostname: "media-services"
+media_lxc_ip: "192.168.178.11" # final IP; build alongside VM 106 with -e media_lxc_ip=192.168.178.16
+media_lxc_netmask: "24"
+media_lxc_gateway: "192.168.178.1"
+media_lxc_bridge: "vmbr0"
+media_lxc_nameserver: "192.168.178.2"
+
+media_lxc_template: "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
+media_lxc_template_download: "debian-13-standard_13.1-2_amd64.tar.zst"
+
+media_lxc_storage: "vmpool"
+media_lxc_rootfs_size: 32      # configs/DBs only; media + downloads live on mediapool (bind)
+media_lxc_memory: 8192
+media_lxc_swap: 512
+media_lxc_cores: 4
+
+media_lxc_unprivileged: true
+media_lxc_nesting: true
+media_lxc_keyctl: true
+media_lxc_fuse: true
+
+# Media library bind: host ZFS dir -> container mount point.
+media_lxc_media_source: "/mediapool/media"
+media_lxc_media_mp: "/media"
+
+# --- Service settings (compose; kept identical so configs migrate unchanged) ---
+
+# media_services_ip is referenced by the umlautadaptarr compose to reach
+# sonarr/radarr; keep it the LXC's final IP.
+media_services_ip: "192.168.178.11"
+media_services_ssh_port: 22
+
+# Docker settings
+media_services_stacks_dir: "/opt/stacks"
+media_services_docker_prune_schedule: "0 5 * * 0"
+
+# Media library mount point inside the container (provided by the bind mount,
+# not NFS). Kept as /media so every *arr volume path stays identical.
+media_services_nfs_mount: "/media"
+
+# VPN configuration
+media_services_vpn_service_provider: "protonvpn"
+media_services_vpn_type: "wireguard"
+
+# Service ports
+media_services_prowlarr_port: 9696
+media_services_sonarr_port: 8989
+media_services_radarr_port: 7878
+media_services_sonarr_anime_port: 8990
+media_services_radarr_anime_port: 7879
+media_services_sabnzbd_port: 8080
+media_services_qbittorrent_port: 8081
+media_services_umlautadaptarr_port: 5006
+
+# UFW settings
+media_services_ufw_default_incoming: "deny"
+media_services_ufw_default_outgoing: "allow"
+
+# Timezone
+media_services_timezone: "Europe/Berlin"
+
+# User/Group IDs
+media_services_puid: 1000
+media_services_pgid: 1000
