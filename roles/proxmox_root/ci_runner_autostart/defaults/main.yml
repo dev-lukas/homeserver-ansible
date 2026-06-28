@@ -1,0 +1,24 @@
+---
+# CI Runner autostart watchdog defaults
+#
+# Runs on the Proxmox host. Polls the GitHub API for queued/in-progress workflow
+# runs across the runner's repos and powers VM on/off with `qm` accordingly, so
+# the CI runner only consumes CPU (and C-state wakeups) while there is work.
+
+ci_runner_autostart_enabled: true
+
+# Which VM to manage and which repos to watch. Default to the values from the
+# ci_runner_vm role (same play), so there is a single source of truth.
+ci_runner_autostart_vmid: "{{ ci_runner_vmid | default(108) }}"
+ci_runner_autostart_github_user: "{{ ci_runner_github_user | default('dev-lukas') }}"
+ci_runner_autostart_repos: "{{ ci_runner_repos | default([]) }}"
+
+# Fine-grained PAT with Actions: read on the repos (reuses the runner's PAT).
+ci_runner_autostart_pat: "{{ vault_github_runner_pat }}"
+
+# How often to poll, and how long the runner must be idle (no queued/in-progress
+# runs) before it is shut down.
+ci_runner_autostart_interval_sec: 90
+ci_runner_autostart_idle_minutes: 10
+
+ci_runner_autostart_state_dir: /var/lib/ci-runner-autostart

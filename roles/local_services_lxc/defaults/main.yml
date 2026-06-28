@@ -1,0 +1,84 @@
+---
+# Combined "apps" LXC: Immich + local web services in one unprivileged,
+# Docker-in-LXC container that bind-mounts the ZFS array directly (no NFS).
+#
+# Recipe validated live (throwaway LXC): unprivileged + nesting/keyctl/fuse,
+# Docker on fuse-overlayfs, idmap container-1000->host-1000, ZFS bind mount.
+
+apps_lxc_vmid: 102
+apps_lxc_hostname: local-services
+apps_lxc_ip: "192.168.178.15"
+apps_lxc_netmask: "24"
+apps_lxc_gateway: "192.168.178.1"
+apps_lxc_bridge: "vmbr0"
+apps_lxc_nameserver: "192.168.178.2"
+
+apps_lxc_template: "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
+apps_lxc_template_download: "debian-13-standard_13.1-2_amd64.tar.zst"
+
+apps_lxc_storage: "vmpool"
+# Rootfs holds the Immich Postgres DB, ML model-cache, Docker images and the
+# local web apps' data. The photo library lives on mediapool (bind mount).
+apps_lxc_rootfs_size: 80
+apps_lxc_memory: 8192
+apps_lxc_swap: 512
+apps_lxc_cores: 4
+
+apps_lxc_ssh_port: 22
+
+apps_lxc_unprivileged: true
+apps_lxc_nesting: true
+apps_lxc_keyctl: true
+apps_lxc_fuse: true
+
+# Immich library: bind the host ZFS dir into the container.
+apps_lxc_immich_source: "/mediapool/immich"
+apps_lxc_immich_mp: "/mnt/immich"
+# Immich runs as the container's default (root). Under the idmap, container root
+# maps to host uid/gid 100000, so the bind target must be owned 100000:100000.
+apps_lxc_library_owner: 100000
+
+# Optional Intel iGPU passthrough for Immich ML (shares the same /dev/dri as
+# jellyfin). Off by default; enable once base stack is validated.
+apps_lxc_igpu_passthrough: false
+
+apps_lxc_deploy_immich: true
+apps_lxc_deploy_local_services: true
+
+# One-shot DB migration: when true, restore Immich's own latest backup
+# (from {{ immich_upload_location }}/backups, or apps_lxc_immich_restore_file)
+# into the fresh Postgres BEFORE starting immich-server, using the official
+# procedure (search_path rewrite + --dbname=immich). Default OFF so steady-state
+# runs never touch a populated DB; it also self-skips if the DB already has data.
+# Pass -e apps_lxc_immich_restore=true only on the cutover run.
+apps_lxc_immich_restore: false
+apps_lxc_immich_restore_file: ""
+
+# --- Service settings (self-contained; this role owns these so immich_vm and
+# local_services_vm can be deleted) ---
+
+# Immich
+immich_stacks_dir: "/opt/stacks"
+immich_nfs_mount: "{{ apps_lxc_immich_mp }}"          # bind mountpoint of the library
+immich_upload_location: "{{ immich_nfs_mount }}/library"
+immich_db_data_location: "{{ immich_stacks_dir }}/immich/postgres"
+immich_version: "release"
+immich_web_port: 2283
+immich_timezone: "Europe/Berlin"
+immich_db_username: "postgres"
+immich_db_name: "immich"
+
+# Local web apps
+local_services_stacks_dir: "/opt/stacks"
+local_services_bentopdf_port: 8080
+local_services_vert_port: 3000
+local_services_mealie_port: 9925
+local_services_homepage_port: 3001
+local_services_mealie_base_url: "https://recipes.lukas-roth.dev"
+
+# Homepage dashboard
+homepage_proxmox_ip: "192.168.178.56"
+homepage_storage_mounts:
+  - name: "Mediapool"
+    mount: "/mediapool"
+homepage_background_url: "https://images.pexels.com/photos/1108701/pexels-photo-1108701.jpeg"

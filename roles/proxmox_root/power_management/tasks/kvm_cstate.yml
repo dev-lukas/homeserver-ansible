@@ -1,0 +1,36 @@
+---
+# Deep-idle C-state tuning: disable KVM halt-polling and the NMI watchdog so
+# idle cores can drop into deep C-states. Both are persisted across reboots and
+# applied at runtime (idempotent - no-op when the live value already matches).
+
+# --- KVM halt_poll_ns ---
+
+- name: Persist kvm halt_poll_ns via modprobe.d
+  ansible.builtin.copy:
+    dest: /etc/modprobe.d/kvm-halt-poll.conf
+    content: "options kvm halt_poll_ns={{ power_kvm_halt_poll_ns }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Apply kvm halt_poll_ns at runtime
+  ansible.builtin.shell: |
+    cur=$(cat /sys/module/kvm/parameters/halt_poll_ns)
+    if [ "$cur" != "{{ power_kvm_halt_poll_ns }}" ]; then
+      echo {{ power_kvm_halt_poll_ns }} > /sys/module/kvm/parameters/halt_poll_ns
+      echo CHANGED
+    fi
+  register: halt_poll_apply
+  changed_when: "'CHANGED' in halt_poll_apply.stdout"
+  failed_when: false
+
+# --- NMI watchdog ---
+
+- name: Disable NMI watchdog (persist + apply)
+  ansible.posix.sysctl:
+    name: kernel.nmi_watchdog
+    value: "{{ power_nmi_watchdog }}"
+    sysctl_set: true
+    sysctl_file: /etc/sysctl.d/99-nmi-watchdog.conf
+    state: present
+    reload: true

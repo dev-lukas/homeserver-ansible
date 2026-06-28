@@ -32,8 +32,24 @@
       --serial0 socket
       --vga serial0
       --agent enabled=1
-      --onboot 1
+      --onboot {{ ci_runner_onboot }}
   when: vm_status.rc != 0
+
+# CI Runner is on-demand: it is powered on by the ci_runner_autostart watchdog
+# when GitHub jobs queue, and shut down again when idle. Enforce onboot here so
+# already-created VMs pick up the setting too (qm create only runs on first build).
+- name: Ensure CI Runner onboot matches desired state
+  ansible.builtin.shell: |
+    cur=$(qm config {{ ci_runner_vmid }} | awk '/^onboot:/{print $2}')
+    cur=${cur:-0}
+    if [ "$cur" != "{{ ci_runner_onboot }}" ]; then
+      qm set {{ ci_runner_vmid }} --onboot {{ ci_runner_onboot }}
+      echo CHANGED
+    fi
+  register: ci_runner_onboot_set
+  changed_when: "'CHANGED' in ci_runner_onboot_set.stdout"
+  tags:
+    - onboot
 
 - name: Import cloud image as disk
   ansible.builtin.command:

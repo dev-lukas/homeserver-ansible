@@ -73,7 +73,7 @@
 # ECC Stats for Homepage Dashboard
 - name: Check if local-services VM is reachable
   ansible.builtin.wait_for:
-    host: "{{ local_services_ip }}"
+    host: "{{ apps_lxc_ip }}"
     port: 22
     timeout: 5
   register: vm_reachable
@@ -88,7 +88,7 @@
 - name: Add local-services VM to in-memory inventory for SSH key setup
   ansible.builtin.add_host:
     name: "local-services-ecc"
-    ansible_host: "{{ local_services_ip }}"
+    ansible_host: "{{ apps_lxc_ip }}"
     ansible_user: root
     ansible_ssh_private_key_file: /tmp/.ansible_deploy_key
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
@@ -121,12 +121,12 @@
   ansible.builtin.cron:
     name: "Update ECC stats for Homepage"
     minute: "*/5"
-    job: "/usr/local/bin/ecc-stats.sh {{ local_services_ip }} /opt/stacks/homepage/api/ecc.json > /dev/null 2>&1"
+    job: "/usr/local/bin/ecc-stats.sh {{ apps_lxc_ip }} /opt/stacks/homepage/api/ecc.json > /dev/null 2>&1"
   when: vm_reachable.state is defined and vm_reachable.state == "started"
 
 - name: Run ECC stats script once to create initial JSON
   ansible.builtin.command:
-    cmd: /usr/local/bin/ecc-stats.sh {{ local_services_ip }} /opt/stacks/homepage/api/ecc.json
+    cmd: /usr/local/bin/ecc-stats.sh {{ apps_lxc_ip }} /opt/stacks/homepage/api/ecc.json
   when: vm_reachable.state is defined and vm_reachable.state == "started"
   changed_when: true
 

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the CI Runner autostart watchdog periodically
+
+[Timer]
+OnBootSec={{ ci_runner_autostart_interval_sec }}
+OnUnitActiveSec={{ ci_runner_autostart_interval_sec }}
+AccuracySec=15
+Unit=ci-runner-autostart.service
+
+[Install]
+WantedBy=timers.target

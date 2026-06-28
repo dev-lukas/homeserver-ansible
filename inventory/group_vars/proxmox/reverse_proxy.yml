@@ -56,25 +56,25 @@ reverse_proxy_backends:
     internal_only: true
   - name: "bentopdf"
     subdomain: "pdf"
-    backend_host: "192.168.178.5"
+    backend_host: "192.168.178.15"
     backend_port: 8080
     websocket: false
     internal_only: true
   - name: "vert"
     subdomain: "vert"
-    backend_host: "192.168.178.5"
+    backend_host: "192.168.178.15"
     backend_port: 3000
     websocket: false
     internal_only: true
   - name: "mealie"
     subdomain: "recipes"
-    backend_host: "192.168.178.5"
+    backend_host: "192.168.178.15"
     backend_port: 9925
     websocket: false
     internal_only: true
   - name: "homepage"
     subdomain: "home"
-    backend_host: "192.168.178.5"
+    backend_host: "192.168.178.15"
     backend_port: 3001
     websocket: false
     internal_only: true
@@ -93,7 +93,7 @@ reverse_proxy_backends:
     internal_only: false  # Publicly accessible
   - name: "immich"
     subdomain: "photos"
-    backend_host: "192.168.178.14"
+    backend_host: "192.168.178.15"
     backend_port: 2283
     websocket: true
     internal_only: true
