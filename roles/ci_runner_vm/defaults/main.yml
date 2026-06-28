@@ -8,6 +8,9 @@ ci_runner_storage: "vmpool"
 ci_runner_disk_size: "64"  # Size in GB - space for registry images
 ci_runner_memory: 4096
 ci_runner_cores: 4
+# On-demand: do not start at boot. The ci_runner_autostart watchdog powers it on
+# when GitHub jobs queue and shuts it down when idle (cuts idle vCPU wakeups).
+ci_runner_onboot: 0
 
 # Cloud image settings
 ci_runner_cloud_image_url: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2"

@@ -199,7 +199,7 @@
   gather_facts: false
   tags: [local_services, maintenance]
   vars:
-    local_services_ip: "{{ hostvars['proxmox-root']['local_services_ip'] | default('192.168.178.5') }}"
+    local_services_ip: "192.168.178.15"  # apps LXC (replaced the local-services VM)
     stacks_dir: "/opt/stacks"
     ssh_key_path: "/tmp/.ansible_deploy_key"
     ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ssh_key_path }}"
@@ -359,7 +359,7 @@
   gather_facts: false
   tags: [immich, maintenance]
   vars:
-    immich_ip: "{{ hostvars['proxmox-root']['immich_ip'] | default('192.168.178.14') }}"
+    immich_ip: "192.168.178.15"  # apps LXC (replaced the immich VM)
     stacks_dir: "/opt/stacks"
     ssh_key_path: "/tmp/.ansible_deploy_key"
     ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ssh_key_path }}"

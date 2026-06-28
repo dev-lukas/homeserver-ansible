@@ -1,0 +1,9 @@
+[Unit]
+Description=CI Runner autostart watchdog (start/stop the runner VM on demand)
+After=pve-guests.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/ci-runner-autostart.env
+ExecStart=/usr/local/sbin/ci-runner-autostart.sh

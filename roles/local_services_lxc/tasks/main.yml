@@ -1,0 +1,205 @@
+---
+# Combined "apps" LXC: Immich + local web services.
+# Unprivileged Docker-in-LXC with a direct ZFS bind mount for the photo library.
+# Self-contained: it carries its own copies of the immich/local-services compose
+# task files, so immich_vm and local_services_vm can be deleted after migration.
+
+# --- Host prerequisites ---
+
+- name: Ensure fuse module is loaded on the host (needed for fuse-overlayfs)
+  community.general.modprobe:
+    name: fuse
+    state: present
+    persistent: present
+
+- name: Download Debian LXC template if not present
+  ansible.builtin.command:
+    cmd: "pveam download local {{ apps_lxc_template_download }}"
+  args:
+    creates: "/var/lib/vz/template/cache/{{ apps_lxc_template_download }}"
+
+- name: Check if LXC container exists
+  ansible.builtin.command:
+    cmd: "pct status {{ apps_lxc_vmid }}"
+  register: apps_container_status
+  failed_when: false
+  changed_when: false
+
+- name: Ensure Immich library bind source exists on host
+  ansible.builtin.file:
+    path: "{{ apps_lxc_immich_source }}/library"
+    state: directory
+    owner: "{{ apps_lxc_library_owner }}"
+    group: "{{ apps_lxc_library_owner }}"
+    mode: "0755"
+  # NOTE: migrating an EXISTING library also needs a one-time recursive chown to
+  # apps_lxc_library_owner (the existing photos are currently root-owned). That is
+  # handled as a deliberate migration step, not on every run.
+
+# --- Create the container ---
+
+- name: Create apps LXC container
+  ansible.builtin.command:
+    cmd: >
+      pct create {{ apps_lxc_vmid }} {{ apps_lxc_template }}
+      --hostname {{ apps_lxc_hostname }}
+      --storage {{ apps_lxc_storage }}
+      --rootfs {{ apps_lxc_storage }}:{{ apps_lxc_rootfs_size }}
+      --memory {{ apps_lxc_memory }}
+      --swap {{ apps_lxc_swap }}
+      --cores {{ apps_lxc_cores }}
+      --net0 name=eth0,bridge={{ apps_lxc_bridge }},ip={{ apps_lxc_ip }}/{{ apps_lxc_netmask }},gw={{ apps_lxc_gateway }}
+      --nameserver {{ apps_lxc_nameserver }}
+      --unprivileged {{ '1' if apps_lxc_unprivileged else '0' }}
+      --features nesting={{ '1' if apps_lxc_nesting else '0' }},keyctl={{ '1' if apps_lxc_keyctl else '0' }},fuse={{ '1' if apps_lxc_fuse else '0' }}
+      --onboot 1
+      --start 0
+  when: apps_container_status.rc != 0
+
+# --- UID/GID mapping (container 1000 -> host 1000), same as jellyfin ---
+
+- name: Configure subuid for root user (allow mapping UID 1000)
+  ansible.builtin.lineinfile:
+    path: /etc/subuid
+    regexp: "^root:1000:1$"
+    line: "root:1000:1"
+    create: true
+
+- name: Configure subgid for root user (allow mapping GID 1000)
+  ansible.builtin.lineinfile:
+    path: /etc/subgid
+    regexp: "^root:1000:1$"
+    line: "root:1000:1"
+    create: true
+
+- name: Remove any existing lxc.idmap entries to prevent duplicates
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ apps_lxc_vmid }}.conf"
+    regexp: "^lxc\\.idmap:"
+    state: absent
+
+- name: Configure LXC UID/GID mapping
+  ansible.builtin.blockinfile:
+    path: "/etc/pve/lxc/{{ apps_lxc_vmid }}.conf"
+    marker: "# {mark} ANSIBLE MANAGED - UID/GID MAPPING"
+    block: |
+      lxc.idmap: u 0 100000 1000
+      lxc.idmap: g 0 100000 1000
+      lxc.idmap: u 1000 1000 1
+      lxc.idmap: g 1000 1000 1
+      lxc.idmap: u 1001 101001 64535
+      lxc.idmap: g 1001 101001 64535
+
+- name: Configure Immich library bind mount
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ apps_lxc_vmid }}.conf"
+    regexp: "^mp0:"
+    line: "mp0: {{ apps_lxc_immich_source }},mp={{ apps_lxc_immich_mp }}"
+    insertafter: EOF
+
+# --- Optional iGPU passthrough for Immich ML ---
+
+- name: Get render group GID from host
+  ansible.builtin.shell: "getent group render | cut -d: -f3"
+  register: apps_host_render_gid
+  changed_when: false
+  when: apps_lxc_igpu_passthrough | default(false) | bool
+
+- name: Configure GPU renderD128 passthrough
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ apps_lxc_vmid }}.conf"
+    regexp: "^dev0:"
+    line: "dev0: /dev/dri/renderD128,uid=0,gid={{ apps_host_render_gid.stdout }}"
+    insertafter: EOF
+  when: (apps_lxc_igpu_passthrough | default(false) | bool) and (apps_host_render_gid.stdout | length > 0)
+
+# --- Start + SSH bootstrap ---
+
+- name: Start the LXC container
+  ansible.builtin.command:
+    cmd: "pct start {{ apps_lxc_vmid }}"
+  register: apps_start_result
+  failed_when: false
+  changed_when: apps_start_result.rc == 0
+
+- name: Wait for container to be ready
+  ansible.builtin.pause:
+    seconds: 10
+  when: apps_start_result.changed
+
+- name: Render deploy authorized_keys to temp file (host)
+  ansible.builtin.copy:
+    dest: /tmp/apps_lxc_authorized_keys
+    mode: "0644"
+    content: |
+      {{ vault_ansible_deploy_public_key }}
+      {% for key in ssh_authorized_keys | default([]) %}{% if key is string %}{{ key }}
+      {% endif %}{% endfor %}
+  no_log: true
+
+- name: Ensure /root/.ssh exists in container
+  ansible.builtin.command:
+    cmd: "pct exec {{ apps_lxc_vmid }} -- install -d -m 700 /root/.ssh"
+  changed_when: false
+
+- name: Push authorized_keys into container
+  ansible.builtin.command:
+    cmd: "pct push {{ apps_lxc_vmid }} /tmp/apps_lxc_authorized_keys /root/.ssh/authorized_keys --perms 600"
+  changed_when: false
+
+- name: Remove temp authorized_keys file
+  ansible.builtin.file:
+    path: /tmp/apps_lxc_authorized_keys
+    state: absent
+
+- name: Ensure openssh-server is installed and enabled in container
+  ansible.builtin.command:
+    cmd: >
+      pct exec {{ apps_lxc_vmid }} -- bash -lc
+      "apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server && systemctl enable --now ssh"
+  changed_when: false
+
+- name: Wait for container SSH to be reachable
+  ansible.builtin.wait_for:
+    host: "{{ apps_lxc_ip }}"
+    port: 22
+    timeout: 120
+
+- name: Add apps LXC to in-memory inventory
+  ansible.builtin.add_host:
+    name: "{{ apps_lxc_hostname }}"
+    ansible_host: "{{ apps_lxc_ip }}"
+    ansible_user: root
+    ansible_ssh_private_key_file: /tmp/.ansible_deploy_key
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30"
+    ansible_ssh_retries: 3
+    groups: apps_lxc_target
+
+# --- Configure the container (over SSH, delegated) ---
+# Self-contained: all compose task files live in this role, so immich_vm and
+# local_services_vm can be deleted once the migration is complete.
+
+- name: Configure the apps LXC
+  block:
+    - name: Install base packages
+      ansible.builtin.include_tasks: base.yml
+
+    - name: Apply security hardening
+      ansible.builtin.include_tasks: harden.yml
+
+    - name: Install Docker (fuse-overlayfs)
+      ansible.builtin.include_tasks: docker.yml
+
+    - name: Deploy Immich stack
+      ansible.builtin.include_tasks: immich.yml
+      when: apps_lxc_deploy_immich | default(true) | bool
+
+    - name: Deploy local services stacks
+      ansible.builtin.include_tasks: stacks.yml
+      when: apps_lxc_deploy_local_services | default(true) | bool
+
+  delegate_to: "{{ apps_lxc_hostname }}"
+
+# Proxmox host firewall (runs on the proxmox host, not delegated).
+- name: Configure Proxmox host firewall for the apps LXC
+  ansible.builtin.include_tasks: proxmox_firewall.yml

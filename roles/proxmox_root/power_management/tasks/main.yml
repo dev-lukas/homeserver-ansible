@@ -20,3 +20,11 @@
   tags:
     - ltr
     - power
+
+- name: Include KVM / deep-idle C-state tuning
+  ansible.builtin.include_tasks: kvm_cstate.yml
+  when: power_kvm_cstate_tuning_enabled | default(true)
+  tags:
+    - cstate
+    - kvm
+    - power

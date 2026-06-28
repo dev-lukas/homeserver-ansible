@@ -1,0 +1,59 @@
+---
+# Configure the Proxmox host firewall for the apps LXC (default-drop inbound,
+# allow only SSH + the published service ports + ICMP).
+
+- name: Enable datacenter firewall
+  ansible.builtin.command:
+    cmd: pvesh set /cluster/firewall/options --enable 1
+  changed_when: false
+
+- name: Ensure firewall config directory exists
+  ansible.builtin.file:
+    path: /etc/pve/firewall
+    state: directory
+    mode: "0755"
+
+# /etc/pve is the Proxmox cluster FS (pmxcfs); it rejects the atomic temp+rename
+# that the copy module uses, so write the .fw file directly with a heredoc
+# (same approach as the jellyfin/immich roles).
+- name: Configure apps LXC firewall
+  ansible.builtin.shell:
+    cmd: |
+      cat > /etc/pve/firewall/{{ apps_lxc_vmid }}.fw << 'FWEOF'
+      [OPTIONS]
+      enable: 1
+      policy_in: DROP
+      policy_out: ACCEPT
+
+      [RULES]
+      # SSH access
+      IN ACCEPT -p tcp -dport {{ apps_lxc_ssh_port }} -log nolog
+      # Immich web UI/API
+      IN ACCEPT -p tcp -dport {{ immich_web_port }} -log nolog
+      # BentoPDF
+      IN ACCEPT -p tcp -dport {{ local_services_bentopdf_port }} -log nolog
+      # VERT
+      IN ACCEPT -p tcp -dport {{ local_services_vert_port }} -log nolog
+      # Mealie
+      IN ACCEPT -p tcp -dport {{ local_services_mealie_port }} -log nolog
+      # Homepage
+      IN ACCEPT -p tcp -dport {{ local_services_homepage_port }} -log nolog
+      # ICMP (ping)
+      IN ACCEPT -p icmp -log nolog
+      FWEOF
+  changed_when: true
+  notify: Reload pve-firewall
+
+- name: Get current net0 configuration
+  ansible.builtin.command:
+    cmd: "pct config {{ apps_lxc_vmid }}"
+  register: apps_net0_config
+  changed_when: false
+
+- name: Enable firewall on container network interface
+  ansible.builtin.command:
+    cmd: >
+      pct set {{ apps_lxc_vmid }} --net0
+      name=eth0,bridge={{ apps_lxc_bridge }},ip={{ apps_lxc_ip }}/{{ apps_lxc_netmask }},gw={{ apps_lxc_gateway }},firewall=1
+  when: "'firewall=1' not in apps_net0_config.stdout"
+  changed_when: true

@@ -1,5 +1,7 @@
 ---
-# Deploy Immich Docker Compose stack
+# Deploy Immich Docker Compose stack (standalone copy for the apps LXC).
+# Library lives on the bind-mounted ZFS dir ({{ immich_nfs_mount }}); the
+# container runs Immich as default root -> host 100000 via idmap.
 
 - name: Validate Immich database password is configured
   ansible.builtin.assert:
@@ -98,6 +100,58 @@
       volumes:
         model-cache:
 
+# --- One-shot DB restore (cutover only; apps_lxc_immich_restore=true) ---
+# Brings up only the database, restores Immich's own backup with the OFFICIAL
+# procedure, then the main "Start Immich stack" task starts immich-server/ML.
+
+- name: Start only the database for restore
+  ansible.builtin.command:
+    cmd: docker compose up -d database redis
+    chdir: "{{ immich_stacks_dir }}/immich"
+  when: apps_lxc_immich_restore | default(false) | bool
+  changed_when: true
+
+- name: Wait for Postgres to be healthy
+  ansible.builtin.command:
+    cmd: docker inspect -f '{{ "{{" }}.State.Health.Status{{ "}}" }}' immich_postgres
+  register: immich_pg_health
+  until: immich_pg_health.stdout == "healthy"
+  retries: 30
+  delay: 4
+  changed_when: false
+  when: apps_lxc_immich_restore | default(false) | bool
+
+- name: Check whether Immich DB is already populated (restore safety guard)
+  ansible.builtin.command:
+    cmd: docker exec immich_postgres psql -U {{ immich_db_username }} -d {{ immich_db_name }} -tAc "select to_regclass('public.asset') is not null;"
+  register: immich_db_populated
+  changed_when: false
+  failed_when: false
+  when: apps_lxc_immich_restore | default(false) | bool
+
+- name: Resolve latest backup file when none specified
+  ansible.builtin.command:
+    cmd: "bash -lc 'ls -1 {{ immich_upload_location }}/backups/immich-db-backup-*.sql.gz | tail -1'"
+  register: immich_latest_backup
+  changed_when: false
+  when:
+    - apps_lxc_immich_restore | default(false) | bool
+    - apps_lxc_immich_restore_file | default('') == ''
+
+- name: "Restore Immich database (official restore: search_path rewrite + dbname=immich)"
+  ansible.builtin.shell:
+    cmd: >
+      set -o pipefail;
+      gunzip < "{{ apps_lxc_immich_restore_file if (apps_lxc_immich_restore_file | default('') != '') else immich_latest_backup.stdout }}"
+      | sed "s/SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public, pg_catalog', true);/g"
+      | docker exec -i immich_postgres psql --dbname={{ immich_db_name }} --username={{ immich_db_username }}
+    executable: /bin/bash
+  register: immich_restore
+  changed_when: true
+  when:
+    - apps_lxc_immich_restore | default(false) | bool
+    - "'t' not in (immich_db_populated.stdout | default('t'))"
+
 - name: Start Immich stack
   ansible.builtin.command:
     cmd: docker compose up -d
@@ -109,7 +163,7 @@
   ansible.builtin.wait_for:
     host: "127.0.0.1"
     port: "{{ immich_web_port }}"
-    timeout: 120
+    timeout: 300
 
 - name: Verify Immich containers are running
   ansible.builtin.command:

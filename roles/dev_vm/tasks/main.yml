@@ -30,8 +30,23 @@
       --serial0 socket
       --vga serial0
       --agent enabled=1
-      --onboot 1
+      --onboot {{ dev_vm_onboot }}
   when: vm_status.rc != 0
+
+# Dev VM is started/stopped manually (only needed while developing). Enforce
+# onboot here so an already-created VM picks up the setting too.
+- name: Ensure dev VM onboot matches desired state
+  ansible.builtin.shell: |
+    cur=$(qm config {{ dev_vm_vmid }} | awk '/^onboot:/{print $2}')
+    cur=${cur:-0}
+    if [ "$cur" != "{{ dev_vm_onboot }}" ]; then
+      qm set {{ dev_vm_vmid }} --onboot {{ dev_vm_onboot }}
+      echo CHANGED
+    fi
+  register: dev_vm_onboot_set
+  changed_when: "'CHANGED' in dev_vm_onboot_set.stdout"
+  tags:
+    - onboot
 
 - name: Import cloud image as disk
   ansible.builtin.command:

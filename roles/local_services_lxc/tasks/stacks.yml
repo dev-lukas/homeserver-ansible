@@ -1,7 +1,6 @@
 ---
-# Deploy Docker Compose stacks for all services
+# Deploy local web-app Docker Compose stacks (standalone copy for the apps LXC).
 
-# Include individual service configurations
 - name: Deploy BentoPDF
   ansible.builtin.include_tasks: services/bentopdf.yml
 
@@ -14,14 +13,13 @@
 - name: Deploy Homepage
   ansible.builtin.include_tasks: services/homepage.yml
 
-# Verification tasks
 - name: Wait for services to start
   ansible.builtin.pause:
     seconds: 15
 
 - name: Verify all containers are running
   ansible.builtin.command:
-    cmd: docker ps --format 'table {{"{{"}}.Names{{"}}"}}\t{{"{{"}}.Status{{"}}"}}\t{{"{{"}}.Ports{{"}}"}}'
+    cmd: docker ps --format 'table {{ "{{" }}.Names{{ "}}" }}\t{{ "{{" }}.Status{{ "}}" }}\t{{ "{{" }}.Ports{{ "}}" }}'
   register: docker_ps
   changed_when: false
 

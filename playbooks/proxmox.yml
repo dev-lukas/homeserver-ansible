@@ -86,17 +86,13 @@
         - storage
         - media
 
-    - role: immich_vm
+    # Combined apps LXC (Immich + local web services). Replaced the former
+    # immich_vm + local_services_vm roles (now removed); it is the single source.
+    - role: local_services_lxc
       tags:
-        - immich
-        - photos
-        - docker
-        - vm
-
-    - role: local_services_vm
-      tags:
+        - apps_lxc
         - local_services
-        - docker
+        - immich
         - lxc
         - containers
 
@@ -125,6 +121,15 @@
         - ci_runner
         - ci
         - vm
+
+    # Host-side watchdog that powers the (onboot 0) CI runner VM on/off on demand.
+    # Placed after ci_runner_vm so its ci_runner_* vars are in scope.
+    - role: proxmox_root/ci_runner_autostart
+      tags:
+        - ci_runner_autostart
+        - ci_runner
+        - ci
+        - power
 
   post_tasks:
     - name: Remove deploy key from temp

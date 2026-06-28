@@ -8,6 +8,9 @@ dev_vm_storage: "vmpool"
 dev_vm_disk_size: "64"  # Size in GB
 dev_vm_memory: 8192
 dev_vm_cores: 4
+# On-demand: do not start at boot; start manually only while developing
+# (e.g. `qm start 107`). Cuts idle vCPU wakeups so the host can reach deep C-states.
+dev_vm_onboot: 0
 
 # Cloud image settings
 dev_vm_cloud_image_url: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2"

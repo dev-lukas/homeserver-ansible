@@ -1,0 +1,49 @@
+---
+# CI Runner autostart watchdog: a host-side systemd timer that powers the runner
+# VM on when GitHub jobs queue and shuts it down when idle.
+
+- name: Install jq (used by the watchdog to parse the GitHub API)
+  ansible.builtin.apt:
+    name: jq
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Deploy watchdog script
+  ansible.builtin.copy:
+    src: ci-runner-autostart.sh
+    dest: /usr/local/sbin/ci-runner-autostart.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy watchdog environment file (contains PAT)
+  ansible.builtin.template:
+    src: ci-runner-autostart.env.j2
+    dest: /etc/ci-runner-autostart.env
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Deploy watchdog systemd service
+  ansible.builtin.copy:
+    src: ci-runner-autostart.service
+    dest: /etc/systemd/system/ci-runner-autostart.service
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Deploy watchdog systemd timer
+  ansible.builtin.template:
+    src: ci-runner-autostart.timer.j2
+    dest: /etc/systemd/system/ci-runner-autostart.timer
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Enable and start the watchdog timer
+  ansible.builtin.systemd:
+    name: ci-runner-autostart.timer
+    enabled: true
+    state: started
+    daemon_reload: true

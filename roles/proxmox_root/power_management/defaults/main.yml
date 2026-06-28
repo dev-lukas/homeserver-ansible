@@ -1,0 +1,12 @@
+---
+# Power management role defaults
+
+# KVM / deep-idle C-state tuning.
+# These values are already live on the host; codified here so a fresh
+# provision reproduces them. They let idle CPU cores reach deep C-states:
+#   - halt_poll_ns=0 stops KVM from busy-polling on the host before halting
+#     an idle vCPU (default 200000ns keeps the core awake).
+#   - nmi_watchdog=0 removes the periodic per-core NMI lockup-detector wakeups.
+power_kvm_cstate_tuning_enabled: true
+power_kvm_halt_poll_ns: 0
+power_nmi_watchdog: 0

@@ -1,0 +1,6 @@
+---
+# Handlers for local_services_lxc role
+
+- name: Reload pve-firewall
+  ansible.builtin.command:
+    cmd: pve-firewall restart

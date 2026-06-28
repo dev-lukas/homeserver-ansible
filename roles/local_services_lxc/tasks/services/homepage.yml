@@ -131,7 +131,7 @@
             - ./api:/app/public/api
           environment:
             - TZ=Europe/Berlin
-            - HOMEPAGE_ALLOWED_HOSTS=home.{{ reverse_proxy_domain }},localhost,127.0.0.1,{{ local_services_ip }}
+            - HOMEPAGE_ALLOWED_HOSTS=home.{{ reverse_proxy_domain }},localhost,127.0.0.1,{{ apps_lxc_ip }}
     mode: "0644"
 
 - name: Deploy Homepage settings.yaml
