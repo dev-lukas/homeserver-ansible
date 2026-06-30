@@ -1,0 +1,14 @@
+[Unit]
+Description=Periodically wake the CI Runner VM so GitHub runner registrations stay alive
+
+[Timer]
+# Fire on a fixed schedule (default: the 1st, 11th and 21st) so the gap between
+# wake-ups never approaches GitHub's ~14-day registration expiry. Persistent
+# catches up a missed run (e.g. the Proxmox host was down) on the next boot.
+OnCalendar={{ ci_runner_keepalive_oncalendar }}
+Persistent=true
+AccuracySec=1h
+Unit=ci-runner-keepalive.service
+
+[Install]
+WantedBy=timers.target

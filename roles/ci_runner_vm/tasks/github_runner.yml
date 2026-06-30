@@ -1,6 +1,13 @@
 ---
-# Install and configure GitHub Actions self-hosted runner
-# Registers a runner per repository using a GitHub PAT stored in vault
+# Install and configure GitHub Actions self-hosted runners (one per repo).
+#
+# Self-healing: GitHub automatically deletes the server-side registration of any
+# runner that has not connected for ~14 days. On the on-demand CI VM this happens
+# to any repo that sees no CI activity for two weeks - the local .runner file
+# still exists, so a naive "register only when .runner is missing" play silently
+# skips it and the runner loops on "Failed to create a session. The runner
+# registration has been deleted from the server". We therefore (re)register a
+# runner whenever it is either unconfigured OR its listener is not active.
 
 - name: Create runner user
   ansible.builtin.user:
@@ -31,27 +38,59 @@
     mode: "0755"
   loop: "{{ ci_runner_repos }}"
 
-- name: Check if runners are already configured
+- name: Check whether the runner binary is present per repo
+  ansible.builtin.stat:
+    path: "{{ ci_runner_runner_dir }}/{{ item }}/config.sh"
+  loop: "{{ ci_runner_repos }}"
+  register: runner_binaries
+
+- name: Check whether the runner is configured per repo
   ansible.builtin.stat:
     path: "{{ ci_runner_runner_dir }}/{{ item }}/.runner"
   loop: "{{ ci_runner_repos }}"
   register: runner_configs
 
-- name: Download GitHub Actions runner
+- name: Check runner listener health per repo
+  ansible.builtin.command:
+    cmd: "systemctl is-active actions.runner.{{ ci_runner_github_user }}-{{ item }}.{{ ci_runner_hostname }}-{{ item }}.service"
+  loop: "{{ ci_runner_repos }}"
+  register: runner_active
+  changed_when: false
+  failed_when: false
+
+# A repo needs (re)registration if it has never been configured, or if its
+# listener is not currently active (dead service == deleted/broken registration
+# while the VM is up, since healthy runners come up at boot and stay "active").
+- name: Determine which runners need (re)registration
+  ansible.builtin.set_fact:
+    runners_to_register: >-
+      {{
+        runners_to_register | default([])
+        + ([item.0.item] if (not item.0.stat.exists) or (item.1.stdout | trim != 'active') else [])
+      }}
+  loop: "{{ runner_configs.results | zip(runner_active.results) | list }}"
+  loop_control:
+    label: "{{ item.0.item }}"
+
+- name: Report runners needing (re)registration
+  ansible.builtin.debug:
+    msg: "Runners to (re)register: {{ runners_to_register | default([]) | join(', ') or 'none' }}"
+
+- name: Download GitHub Actions runner archive
   ansible.builtin.get_url:
     url: "https://github.com/actions/runner/releases/download/v{{ runner_version.stdout }}/actions-runner-linux-x64-{{ runner_version.stdout }}.tar.gz"
     dest: "/tmp/actions-runner.tar.gz"
     mode: "0644"
-  when: runner_configs.results | selectattr('stat.exists', 'equalto', false) | list | length > 0
+  when: runner_binaries.results | selectattr('stat.exists', 'equalto', false) | list | length > 0
 
-- name: Extract runner to each unconfigured repo directory
+- name: Extract runner to each repo directory missing the binary
   ansible.builtin.unarchive:
     src: /tmp/actions-runner.tar.gz
     dest: "{{ ci_runner_runner_dir }}/{{ item.item }}"
     remote_src: true
     owner: runner
     group: runner
-  loop: "{{ runner_configs.results }}"
+  loop: "{{ runner_binaries.results }}"
   loop_control:
     label: "{{ item.item }}"
   when: not item.stat.exists
@@ -64,39 +103,48 @@
 - name: Install runner dependencies
   ansible.builtin.command:
     cmd: "{{ ci_runner_runner_dir }}/{{ ci_runner_repos[0] }}/bin/installdependencies.sh"
-  when: runner_configs.results | selectattr('stat.exists', 'equalto', false) | list | length > 0
+  when: runner_binaries.results | selectattr('stat.exists', 'equalto', false) | list | length > 0
 
-- name: Get registration token for each repo
+- name: Get a registration token for each runner needing (re)registration
   ansible.builtin.uri:
-    url: "https://api.github.com/repos/{{ ci_runner_github_user }}/{{ item.item }}/actions/runners/registration-token"
+    url: "https://api.github.com/repos/{{ ci_runner_github_user }}/{{ item }}/actions/runners/registration-token"
     method: POST
     headers:
       Authorization: "Bearer {{ vault_github_runner_pat }}"
       Accept: "application/vnd.github+json"
     status_code: 201
-  loop: "{{ runner_configs.results }}"
-  loop_control:
-    label: "{{ item.item }}"
+  loop: "{{ runners_to_register | default([]) }}"
   register: reg_tokens
-  when: not item.stat.exists
+  no_log: true
 
-- name: Configure runner for each repo
+# Clears a stale local .runner/.credentials so config.sh can register cleanly.
+# `removes:` makes this a no-op for never-configured repos (no .runner yet).
+- name: Clear stale local registration before reconfiguring
+  ansible.builtin.command:
+    cmd: ./config.sh remove --local
+    chdir: "{{ ci_runner_runner_dir }}/{{ item }}"
+    removes: "{{ ci_runner_runner_dir }}/{{ item }}/.runner"
+  become: true
+  become_user: runner
+  loop: "{{ runners_to_register | default([]) }}"
+
+- name: Configure each runner needing (re)registration
   ansible.builtin.command:
     cmd: >
       ./config.sh
-      --url https://github.com/{{ ci_runner_github_user }}/{{ item.item.item }}
+      --url https://github.com/{{ ci_runner_github_user }}/{{ item.item }}
       --token {{ item.json.token }}
-      --name {{ ci_runner_hostname }}-{{ item.item.item }}
+      --name {{ ci_runner_hostname }}-{{ item.item }}
       --labels {{ ci_runner_runner_labels }}
       --unattended
       --replace
-    chdir: "{{ ci_runner_runner_dir }}/{{ item.item.item }}"
+    chdir: "{{ ci_runner_runner_dir }}/{{ item.item }}"
   become: true
   become_user: runner
-  loop: "{{ reg_tokens.results }}"
+  loop: "{{ reg_tokens.results | default([]) }}"
   loop_control:
-    label: "{{ item.item.item | default('skipped') }}"
-  when: item.skipped is not defined
+    label: "{{ item.item | default('skipped') }}"
+  when: item.json is defined
   no_log: true
 
 - name: Install runner service for each repo
@@ -106,13 +154,23 @@
     creates: "/etc/systemd/system/actions.runner.{{ ci_runner_github_user }}-{{ item }}.{{ ci_runner_hostname }}-{{ item }}.service"
   loop: "{{ ci_runner_repos }}"
 
-- name: Start runner service for each repo
-  ansible.builtin.command:
-    cmd: ./svc.sh start
-    chdir: "{{ ci_runner_runner_dir }}/{{ item }}"
+# Use the systemd module (not svc.sh start with failed_when:false) so a runner
+# that fails to come up surfaces as a failed task instead of being masked.
+- name: Ensure every runner service is enabled and running
+  ansible.builtin.systemd:
+    name: "actions.runner.{{ ci_runner_github_user }}-{{ item }}.{{ ci_runner_hostname }}-{{ item }}.service"
+    enabled: true
+    state: started
+    daemon_reload: true
   loop: "{{ ci_runner_repos }}"
-  changed_when: false
-  failed_when: false
+
+# Re-registered runners may have a unit that was already loaded but dead; force a
+# restart so they pick up the fresh credentials immediately.
+- name: Restart re-registered runner services
+  ansible.builtin.systemd:
+    name: "actions.runner.{{ ci_runner_github_user }}-{{ item }}.{{ ci_runner_hostname }}-{{ item }}.service"
+    state: restarted
+  loop: "{{ runners_to_register | default([]) }}"
 
 - name: Display runner status
   ansible.builtin.debug:
@@ -121,4 +179,5 @@
       {% for repo in ci_runner_repos %}
         - {{ ci_runner_github_user }}/{{ repo }} ({{ ci_runner_hostname }}-{{ repo }})
       {% endfor %}
+      (Re)registered this run: {{ runners_to_register | default([]) | join(', ') or 'none' }}
       Labels: {{ ci_runner_runner_labels }}

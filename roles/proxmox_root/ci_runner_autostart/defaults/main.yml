@@ -22,3 +22,9 @@ ci_runner_autostart_interval_sec: 90
 ci_runner_autostart_idle_minutes: 10
 
 ci_runner_autostart_state_dir: /var/lib/ci-runner-autostart
+
+# Keepalive: GitHub deletes the registration of any runner offline for ~14 days.
+# Because the VM is on-demand it can sit powered off longer than that for a quiet
+# repo, so this schedule wakes it on the 1st/11th/21st (max gap ~11 days < 14) to
+# let every runner reconnect. The autostart watchdog powers it back down on idle.
+ci_runner_keepalive_oncalendar: "*-*-01,11,21 04:30:00"

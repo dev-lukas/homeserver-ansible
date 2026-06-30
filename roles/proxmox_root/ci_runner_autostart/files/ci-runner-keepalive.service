@@ -1,0 +1,9 @@
+[Unit]
+Description=CI Runner keepalive (periodically wake the runner VM so GitHub registrations don't expire)
+After=pve-guests.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/ci-runner-autostart.env
+ExecStart=/usr/local/sbin/ci-runner-keepalive.sh
