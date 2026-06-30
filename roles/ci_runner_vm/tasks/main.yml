@@ -8,6 +8,12 @@
   register: vm_status
   failed_when: false
   changed_when: false
+  # Tagged so a targeted run (e.g. --tags ci_runner to self-heal a runner) still
+  # establishes VM state, powers it on and registers the delegation host below.
+  tags:
+    - ci_runner
+    - ci
+    - vm
 
 # Phase 1: Create VM on Proxmox host
 - name: Download Debian cloud image if not present
@@ -120,6 +126,10 @@
   register: start_result
   failed_when: false
   changed_when: start_result.rc == 0
+  tags:
+    - ci_runner
+    - ci
+    - vm
 
 - name: Wait for VM to boot and get SSH ready
   ansible.builtin.wait_for:
@@ -128,6 +138,10 @@
     delay: 10
     timeout: 300
   when: start_result.changed or vm_status.rc != 0
+  tags:
+    - ci_runner
+    - ci
+    - vm
 
 - name: Wait additional time for cloud-init to complete
   ansible.builtin.pause:
@@ -143,6 +157,10 @@
     ansible_ssh_private_key_file: /tmp/.ansible_deploy_key
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
     groups: ci_runner_target
+  tags:
+    - ci_runner
+    - ci
+    - vm
 
 # Phase 3: Configure the VM (delegate to new host)
 - name: Configure the CI Runner VM

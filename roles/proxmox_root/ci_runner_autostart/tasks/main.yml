@@ -47,3 +47,34 @@
     enabled: true
     state: started
     daemon_reload: true
+
+- name: Deploy keepalive script
+  ansible.builtin.copy:
+    src: ci-runner-keepalive.sh
+    dest: /usr/local/sbin/ci-runner-keepalive.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy keepalive systemd service
+  ansible.builtin.copy:
+    src: ci-runner-keepalive.service
+    dest: /etc/systemd/system/ci-runner-keepalive.service
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Deploy keepalive systemd timer
+  ansible.builtin.template:
+    src: ci-runner-keepalive.timer.j2
+    dest: /etc/systemd/system/ci-runner-keepalive.timer
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Enable and start the keepalive timer
+  ansible.builtin.systemd:
+    name: ci-runner-keepalive.timer
+    enabled: true
+    state: started
+    daemon_reload: true
