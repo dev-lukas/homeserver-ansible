@@ -1,0 +1,43 @@
+name: Renovate
+
+# Self-hosted Renovate with zero always-on footprint: GitHub's cron queues
+# the job, the ci-runner autostart watchdog wakes VM 108, Renovate runs in
+# docker on the runner, and the watchdog shuts the VM down again when idle.
+
+on:
+  schedule:
+    - cron: "0 3,15 * * *" # ~05:00 / 17:00 Europe/Berlin (cron is UTC)
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        description: Run Renovate in dry-run mode (log only, no PRs)
+        type: boolean
+        default: false
+      logLevel:
+        description: Log level
+        type: choice
+        options: [info, debug]
+        default: info
+
+concurrency: renovate
+
+permissions:
+  contents: read
+
+jobs:
+  renovate:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Run Renovate
+        uses: renovatebot/github-action@v46.1.17
+        with:
+          token: ${{ secrets.RENOVATE_TOKEN }}
+          configurationFile: .github/renovate-global.js
+          renovate-version: 43.251.0
+        env:
+          RENOVATE_DRY_RUN: ${{ inputs.dryRun == true && 'full' || '' }}
+          RENOVATE_REGISTRY_PASSWORD: ${{ secrets.RENOVATE_REGISTRY_PASSWORD }}
+          LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
