@@ -1,19 +1,18 @@
 ---
 # CI Runner VM configuration
 
-# VM resources
+# VM resources. The VM is on-demand (watchdog-managed), so these cost power
+# only while CI actually runs; sized for parallel repo pipelines including
+# docker-compose integration stacks. Applied to the existing VM by
+# roles/ci_runner_vm/tasks/reconcile.yml (disk is grow-only).
 ci_runner_vmid: 108
 ci_runner_hostname: "ci-runner"
-ci_runner_memory: 4096
-ci_runner_cores: 4
-ci_runner_disk_size: "64"
+ci_runner_memory: 16384
+ci_runner_cores: 8
+ci_runner_disk_size: "128"
 
 # Network
 ci_runner_ip: "192.168.178.13"
 ci_runner_gateway: "192.168.178.1"
 ci_runner_netmask: "24"
 ci_runner_nameserver: "192.168.178.2"
-
-# Registry
-ci_runner_registry_port: 5000
-ci_runner_registry_retention_keep_tags: 5

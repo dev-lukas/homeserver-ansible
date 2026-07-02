@@ -5,7 +5,7 @@
 ci_runner_vmid: 108
 ci_runner_hostname: "ci-runner"
 ci_runner_storage: "vmpool"
-ci_runner_disk_size: "64"  # Size in GB - space for registry images
+ci_runner_disk_size: "64"  # Size in GB - docker build caches + tool caches
 ci_runner_memory: 4096
 ci_runner_cores: 4
 # On-demand: do not start at boot. The ci_runner_autostart watchdog powers it on
@@ -30,25 +30,32 @@ ci_runner_ssh_port: 22
 ci_runner_ufw_default_incoming: "deny"
 ci_runner_ufw_default_outgoing: "allow"
 
-# Registry settings
-ci_runner_registry_image: "registry:2"
-ci_runner_registry_port: 5000
-ci_runner_registry_data_dir: "/opt/registry/data"
-ci_runner_registry_retention_keep_tags: 5
-ci_runner_registry_retention_cron_minute: "30"
-ci_runner_registry_retention_cron_hour: "5"
-ci_runner_registry_retention_cron_weekday: "0"
-ci_runner_stacks_dir: "/opt/stacks"
-
 # GitHub Actions runner settings
 ci_runner_github_user: "dev-lukas"
 ci_runner_runner_dir: "/opt/actions-runner"
 ci_runner_runner_labels: "self-hosted,linux,x64"
 # Repos to register the runner for
 ci_runner_repos:
+  - ci-cd-actions
   - firephenix-backend
   - firephenix-gameserver-catalog
   - firephenix-server-ansible
   - firephenix-website
   - homeserver-ansible
   - portfolio
+
+# Toolchain settings (tasks/toolchain.yml)
+# Python minors the python-checks workflow may request (Debian 13 ships only
+# 3.13; the rest come from uv-managed CPython builds under /opt/uv-pythons).
+ci_runner_python_versions:
+  - "3.11"
+  - "3.12"
+  - "3.13"
+ci_runner_uv_version: "0.11.25"
+# Shared caches written into each repo runner's .env: setup-node tool
+# downloads and Playwright browsers are stored once, not per repo runner.
+ci_runner_runner_env_entries:
+  - key: RUNNER_TOOL_CACHE
+    value: /opt/hostedtoolcache
+  - key: PLAYWRIGHT_BROWSERS_PATH
+    value: /opt/playwright-browsers

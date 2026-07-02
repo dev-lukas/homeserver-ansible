@@ -1,0 +1,48 @@
+---
+# Reconcile CPU/RAM/disk of an EXISTING VM with the desired vars.
+# `qm create` only runs on first build, so spec bumps in group_vars never
+# reached the live VM before this. Pattern follows the onboot reconcile task.
+# Runs on the Proxmox host.
+
+- name: Read current VM configuration
+  ansible.builtin.command:
+    cmd: "qm config {{ ci_runner_vmid }}"
+  register: ci_runner_vm_config
+  changed_when: false
+
+- name: Extract current specs
+  ansible.builtin.set_fact:
+    ci_runner_current_cores: "{{ ci_runner_vm_config.stdout | regex_search('(?m)^cores: (\\d+)', '\\1') | default(['0'], true) | first }}"
+    ci_runner_current_memory: "{{ ci_runner_vm_config.stdout | regex_search('(?m)^memory: (\\d+)', '\\1') | default(['0'], true) | first }}"
+    ci_runner_current_disk_gb: "{{ ci_runner_vm_config.stdout | regex_search('(?m)^scsi0: .*size=(\\d+)G', '\\1') | default(['0'], true) | first }}"
+
+- name: Update VM cores and memory to desired values
+  ansible.builtin.command:
+    cmd: "qm set {{ ci_runner_vmid }} --cores {{ ci_runner_cores }} --memory {{ ci_runner_memory }}"
+  when: >
+    ci_runner_current_cores | int != ci_runner_cores | int
+    or ci_runner_current_memory | int != ci_runner_memory | int
+  register: ci_runner_spec_change
+
+- name: Grow VM disk to desired size (grow-only)
+  ansible.builtin.command:
+    cmd: "qm disk resize {{ ci_runner_vmid }} scsi0 {{ ci_runner_disk_size }}G"
+  when: ci_runner_current_disk_gb | int < ci_runner_disk_size | int
+  register: ci_runner_disk_change
+
+- name: Check whether the VM is currently running
+  ansible.builtin.command:
+    cmd: "qm status {{ ci_runner_vmid }}"
+  register: ci_runner_reconcile_status
+  changed_when: false
+  failed_when: false
+
+# cores/memory only apply on the next power-cycle; the cloud image's growpart
+# expands the root filesystem on boot after a disk resize. The "Start the VM"
+# task later in main.yml boots it back up with the new specs.
+- name: Shut VM down so spec changes take effect on next start
+  ansible.builtin.command:
+    cmd: "qm shutdown {{ ci_runner_vmid }} --timeout 120"
+  when:
+    - "'running' in ci_runner_reconcile_status.stdout"
+    - ci_runner_spec_change is changed or ci_runner_disk_change is changed

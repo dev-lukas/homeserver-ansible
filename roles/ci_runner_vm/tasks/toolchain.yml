@@ -1,0 +1,138 @@
+---
+# CI toolchain tailored to the ci-cd-actions workflows (runs inside the VM):
+# - shared actions tool cache (setup-node downloads once, not per repo runner)
+# - Python minors via uv (python-checks resolves pythonX.Y from PATH;
+#   Debian 13 only ships 3.13)
+# - Playwright chromium system deps + shared browser cache
+# - build essentials and a docker prune cron to keep the disk bounded
+
+- name: Install general build packages
+  ansible.builtin.apt:
+    name:
+      - build-essential
+      - git-lfs
+      - zstd
+      - unzip
+      - rsync
+      - shellcheck
+    state: present
+
+# --- Shared GitHub Actions tool cache ---
+# Runs AFTER github_runner.yml: the per-repo runner directories and services
+# must already exist. The runner only reads .env at process start, so restart
+# any runner whose env entries changed.
+
+- name: Create shared actions tool cache directory
+  ansible.builtin.file:
+    path: /opt/hostedtoolcache
+    state: directory
+    owner: runner
+    group: runner
+    mode: "0755"
+
+- name: Create shared Playwright browsers directory
+  ansible.builtin.file:
+    path: /opt/playwright-browsers
+    state: directory
+    owner: runner
+    group: runner
+    mode: "0755"
+
+- name: Point each repo runner at the shared caches
+  ansible.builtin.lineinfile:
+    path: "{{ ci_runner_runner_dir }}/{{ item.0 }}/.env"
+    regexp: "^{{ item.1.key }}="
+    line: "{{ item.1.key }}={{ item.1.value }}"
+    create: true
+    owner: runner
+    group: runner
+    mode: "0644"
+  loop: "{{ ci_runner_repos | product(ci_runner_runner_env_entries) | list }}"
+  loop_control:
+    label: "{{ item.0 }}: {{ item.1.key }}"
+  register: ci_runner_env_updates
+
+- name: Restart runners whose environment changed
+  ansible.builtin.systemd:
+    name: "actions.runner.{{ ci_runner_github_user }}-{{ item }}.{{ ci_runner_hostname }}-{{ item }}.service"
+    state: restarted
+  loop: >-
+    {{ ci_runner_env_updates.results
+       | selectattr('changed')
+       | map(attribute='item.0')
+       | unique
+       | list }}
+
+# --- Python minors via uv ---
+
+- name: Install uv system-wide (pinned version)
+  ansible.builtin.shell:
+    cmd: >
+      curl -LsSf https://astral.sh/uv/{{ ci_runner_uv_version }}/install.sh
+      | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh
+  args:
+    creates: /usr/local/bin/uv
+
+- name: Install managed Python versions
+  ansible.builtin.command:
+    cmd: "/usr/local/bin/uv python install {{ ci_runner_python_versions | join(' ') }}"
+  environment:
+    UV_PYTHON_INSTALL_DIR: /opt/uv-pythons
+  register: uv_python_install
+  changed_when: "'installed' in uv_python_install.stderr | lower or 'installed' in uv_python_install.stdout | lower"
+
+- name: Expose managed Pythons on PATH for the workflows
+  ansible.builtin.shell: |
+    set -euo pipefail
+    changed=0
+    for version in {{ ci_runner_python_versions | join(' ') }}; do
+      target="$(UV_PYTHON_INSTALL_DIR=/opt/uv-pythons /usr/local/bin/uv python find "$version")"
+      link="/usr/local/bin/python$version"
+      if [ "$(readlink -f "$link" 2>/dev/null)" != "$(readlink -f "$target")" ]; then
+        ln -sf "$target" "$link"
+        changed=1
+      fi
+    done
+    [ "$changed" = "1" ] && echo CHANGED || true
+  register: uv_python_links
+  changed_when: "'CHANGED' in uv_python_links.stdout"
+
+- name: Ensure managed Pythons are world-executable
+  ansible.builtin.file:
+    path: /opt/uv-pythons
+    state: directory
+    mode: "0755"
+
+# --- Playwright chromium system dependencies ---
+
+- name: Install Playwright chromium system dependencies
+  ansible.builtin.apt:
+    name:
+      - libnss3
+      - libnspr4
+      - libatk1.0-0
+      - libatk-bridge2.0-0
+      - libcups2
+      - libdrm2
+      - libxkbcommon0
+      - libxcomposite1
+      - libxdamage1
+      - libxfixes3
+      - libxrandr2
+      - libgbm1
+      - libasound2
+      - fonts-liberation
+      - libpango-1.0-0
+      - libcairo2
+    state: present
+
+# --- Disk hygiene ---
+
+- name: Create weekly docker prune cron
+  ansible.builtin.cron:
+    name: "Docker build cache prune"
+    minute: "15"
+    hour: "5"
+    weekday: "6"
+    job: "docker system prune -af --filter until=168h >> /var/log/docker-prune.log 2>&1"
+    user: root
