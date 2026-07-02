@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
+import base64
 import json
 import re
+import ssl
 import sys
 import urllib.error
 import urllib.parse
@@ -8,9 +10,10 @@ import urllib.request
 from pathlib import Path
 
 
-REGISTRY_URL = "http://127.0.0.1:{{ ci_runner_registry_port }}"
-REGISTRY_DATA_DIR = Path("{{ ci_runner_registry_data_dir }}")
-KEEP_SHA_TAGS = int("{{ ci_runner_registry_retention_keep_tags }}")
+REGISTRY_URL = "https://127.0.0.1:{{ registry_lxc_port }}"
+REGISTRY_DATA_DIR = Path("{{ registry_lxc_data_mp }}")
+CREDENTIALS_FILE = Path("/etc/registry/retention-credentials")
+KEEP_SHA_TAGS = int("{{ registry_lxc_retention_keep_tags }}")
 SHA_TAG_RE = re.compile(r"^[0-9a-f]{40}$")
 PAGE_SIZE = 1000
 TIMEOUT_SECONDS = 30
@@ -24,6 +27,12 @@ MANIFEST_ACCEPT = ", ".join(
     ]
 )
 
+# Self-signed cert on the proxy->registry hop; this script talks to localhost.
+SSL_CONTEXT = ssl._create_unverified_context()
+
+_credentials = CREDENTIALS_FILE.read_text(encoding="utf-8").strip()
+AUTH_HEADER = "Basic " + base64.b64encode(_credentials.encode("utf-8")).decode("ascii")
+
 
 def log(message):
     print(message, flush=True)
@@ -31,9 +40,13 @@ def log(message):
 
 def registry_request(method, path, headers=None):
     url = REGISTRY_URL.rstrip("/") + path
-    request = urllib.request.Request(url, method=method, headers=headers or {})
+    request_headers = {"Authorization": AUTH_HEADER}
+    request_headers.update(headers or {})
+    request = urllib.request.Request(url, method=method, headers=request_headers)
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+        with urllib.request.urlopen(
+            request, timeout=TIMEOUT_SECONDS, context=SSL_CONTEXT
+        ) as response:
             body = response.read()
             return response.status, response.headers, body
     except urllib.error.HTTPError as exc:

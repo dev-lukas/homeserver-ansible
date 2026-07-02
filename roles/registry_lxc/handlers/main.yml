@@ -1,0 +1,12 @@
+---
+# Handlers for registry_lxc role
+
+- name: Reload pve-firewall
+  ansible.builtin.command:
+    cmd: pve-firewall restart
+
+- name: Restart registry
+  ansible.builtin.systemd:
+    name: registry
+    state: restarted
+  delegate_to: "{{ registry_lxc_hostname }}"

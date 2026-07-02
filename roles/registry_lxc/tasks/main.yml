@@ -1,0 +1,143 @@
+---
+# Always-on registry LXC: dataset on mediapool, unprivileged Debian container,
+# distribution binary as a hardened systemd service. No Docker, no nesting.
+
+# --- Host prerequisites ---
+
+- name: Create ZFS dataset for registry data
+  community.general.zfs:
+    name: "{{ registry_lxc_dataset }}"
+    state: present
+    extra_zfs_properties:
+      recordsize: "1M"
+
+- name: Ensure registry data bind source exists on host
+  ansible.builtin.file:
+    path: "{{ registry_lxc_data_source }}"
+    state: directory
+    owner: "{{ registry_lxc_data_host_owner }}"
+    group: "{{ registry_lxc_data_host_owner }}"
+    mode: "0750"
+  # NOTE: when migrating the EXISTING registry data from the CI VM, the rsynced
+  # tree also needs a one-time recursive chown to registry_lxc_data_host_owner.
+  # That is a deliberate migration step, not done on every run.
+
+- name: Download Debian LXC template if not present
+  ansible.builtin.command:
+    cmd: "pveam download local {{ registry_lxc_template_download }}"
+  args:
+    creates: "/var/lib/vz/template/cache/{{ registry_lxc_template_download }}"
+
+- name: Check if LXC container exists
+  ansible.builtin.command:
+    cmd: "pct status {{ registry_lxc_vmid }}"
+  register: registry_container_status
+  failed_when: false
+  changed_when: false
+
+# --- Create the container ---
+
+- name: Create registry LXC container
+  ansible.builtin.command:
+    cmd: >
+      pct create {{ registry_lxc_vmid }} {{ registry_lxc_template }}
+      --hostname {{ registry_lxc_hostname }}
+      --storage {{ registry_lxc_storage }}
+      --rootfs {{ registry_lxc_storage }}:{{ registry_lxc_rootfs_size }}
+      --memory {{ registry_lxc_memory }}
+      --swap {{ registry_lxc_swap }}
+      --cores {{ registry_lxc_cores }}
+      --net0 name=eth0,bridge={{ registry_lxc_bridge }},ip={{ registry_lxc_ip }}/{{ registry_lxc_netmask }},gw={{ registry_lxc_gateway }}
+      --nameserver {{ registry_lxc_nameserver }}
+      --unprivileged {{ '1' if registry_lxc_unprivileged else '0' }}
+      --onboot 1
+      --start 0
+  when: registry_container_status.rc != 0
+
+- name: Configure registry data bind mount
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ registry_lxc_vmid }}.conf"
+    regexp: "^mp0:"
+    line: "mp0: {{ registry_lxc_data_source }},mp={{ registry_lxc_data_mp }}"
+    insertafter: EOF
+
+# --- Start + SSH bootstrap ---
+
+- name: Start the LXC container
+  ansible.builtin.command:
+    cmd: "pct start {{ registry_lxc_vmid }}"
+  register: registry_start_result
+  failed_when: false
+  changed_when: registry_start_result.rc == 0
+
+- name: Wait for container to be ready
+  ansible.builtin.pause:
+    seconds: 10
+  when: registry_start_result.changed
+
+- name: Render deploy authorized_keys to temp file (host)
+  ansible.builtin.copy:
+    dest: /tmp/registry_lxc_authorized_keys
+    mode: "0644"
+    content: |
+      {{ vault_ansible_deploy_public_key }}
+      {% for key in ssh_authorized_keys | default([]) %}{% if key is string %}{{ key }}
+      {% endif %}{% endfor %}
+  no_log: true
+
+- name: Ensure /root/.ssh exists in container
+  ansible.builtin.command:
+    cmd: "pct exec {{ registry_lxc_vmid }} -- install -d -m 700 /root/.ssh"
+  changed_when: false
+
+- name: Push authorized_keys into container
+  ansible.builtin.command:
+    cmd: "pct push {{ registry_lxc_vmid }} /tmp/registry_lxc_authorized_keys /root/.ssh/authorized_keys --perms 600"
+  changed_when: false
+
+- name: Remove temp authorized_keys file
+  ansible.builtin.file:
+    path: /tmp/registry_lxc_authorized_keys
+    state: absent
+
+- name: Ensure openssh-server is installed and enabled in container
+  ansible.builtin.command:
+    cmd: >
+      pct exec {{ registry_lxc_vmid }} -- bash -lc
+      "apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server && systemctl enable --now ssh"
+  changed_when: false
+
+- name: Wait for container SSH to be reachable
+  ansible.builtin.wait_for:
+    host: "{{ registry_lxc_ip }}"
+    port: 22
+    timeout: 120
+
+- name: Add registry LXC to in-memory inventory
+  ansible.builtin.add_host:
+    name: "{{ registry_lxc_hostname }}"
+    ansible_host: "{{ registry_lxc_ip }}"
+    ansible_user: root
+    ansible_ssh_private_key_file: /tmp/.ansible_deploy_key
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30"
+    ansible_ssh_retries: 3
+    groups: registry_lxc_target
+
+# --- Configure the container (over SSH, delegated) ---
+
+- name: Configure the registry LXC
+  block:
+    - name: Apply security hardening
+      ansible.builtin.include_tasks: harden.yml
+
+    - name: Install and configure the registry service
+      ansible.builtin.include_tasks: install_registry.yml
+
+    - name: Install retention and garbage collection
+      ansible.builtin.include_tasks: retention.yml
+
+  delegate_to: "{{ registry_lxc_hostname }}"
+
+# Proxmox host firewall (runs on the proxmox host, not delegated).
+- name: Configure Proxmox host firewall for the registry LXC
+  ansible.builtin.include_tasks: proxmox_firewall.yml

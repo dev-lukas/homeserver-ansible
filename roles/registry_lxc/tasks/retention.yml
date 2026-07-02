@@ -1,0 +1,83 @@
+---
+# Retention + garbage collection, ported from the old ci_runner_vm registry:
+# same policy (keep latest/non-SHA tags + newest N SHA tags), but the GC step
+# stops the systemd service and runs the binary's garbage-collect directly
+# instead of juggling docker containers.
+
+- name: Deploy retention credentials for the local script
+  ansible.builtin.copy:
+    dest: /etc/registry/retention-credentials
+    content: "{{ registry_lxc_retention_credentials }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Install registry retention deletion script
+  ansible.builtin.template:
+    src: registry-retention.py.j2
+    dest: /usr/local/bin/registry-retention.py
+    mode: "0755"
+
+- name: Install registry retention runner
+  ansible.builtin.copy:
+    dest: /usr/local/bin/registry-retention.sh
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      echo "$(date --iso-8601=seconds): Starting registry retention"
+
+      /usr/local/bin/registry-retention.py
+
+      echo "$(date --iso-8601=seconds): Running registry garbage collection"
+      systemctl stop registry
+      trap 'systemctl start registry >/dev/null 2>&1 || true' EXIT
+
+      runuser -u {{ registry_lxc_user }} -- \
+        /usr/local/bin/registry garbage-collect /etc/registry/config.yml
+
+      systemctl start registry
+      trap - EXIT
+
+      registry_ready=false
+      for attempt in $(seq 1 30); do
+        if curl -fsSk -o /dev/null -w '%{http_code}' \
+             "https://127.0.0.1:{{ registry_lxc_port }}/v2/" | grep -q '^401$'; then
+          registry_ready=true
+          break
+        fi
+        sleep 1
+      done
+      if [ "$registry_ready" != "true" ]; then
+        echo "$(date --iso-8601=seconds): Registry did not become healthy after garbage collection" >&2
+        exit 1
+      fi
+
+      echo "$(date --iso-8601=seconds): Registry retention completed"
+      df -h {{ registry_lxc_data_mp }}
+    mode: "0755"
+
+- name: Create cron job for registry retention
+  ansible.builtin.cron:
+    name: "Container registry retention"
+    minute: "{{ registry_lxc_retention_cron_minute }}"
+    hour: "{{ registry_lxc_retention_cron_hour }}"
+    weekday: "{{ registry_lxc_retention_cron_weekday }}"
+    job: "flock -n /var/lock/registry-retention.lock /usr/local/bin/registry-retention.sh >> /var/log/registry-retention.log 2>&1"
+    user: root
+
+- name: Create logrotate config for registry retention logs
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/registry-retention
+    content: |
+      /var/log/registry-retention.log {
+          weekly
+          rotate 8
+          compress
+          delaycompress
+          missingok
+          notifempty
+          create 0640 root root
+      }
+    mode: "0644"

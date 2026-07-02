@@ -1,0 +1,53 @@
+---
+# Proxmox host firewall for the registry LXC: default-drop inbound, allow SSH
+# from LAN, the registry port ONLY from the reverse proxy, and ICMP.
+
+- name: Enable datacenter firewall
+  ansible.builtin.command:
+    cmd: pvesh set /cluster/firewall/options --enable 1
+  changed_when: false
+
+- name: Ensure firewall config directory exists
+  ansible.builtin.file:
+    path: /etc/pve/firewall
+    state: directory
+    mode: "0755"
+
+# /etc/pve is the Proxmox cluster FS (pmxcfs); it rejects the atomic temp+rename
+# that the copy module uses, so write the .fw file directly with a heredoc
+# (same approach as the other LXC roles).
+- name: Configure registry LXC firewall
+  ansible.builtin.shell:
+    cmd: |
+      cat > /etc/pve/firewall/{{ registry_lxc_vmid }}.fw << 'FWEOF'
+      [OPTIONS]
+      enable: 1
+      policy_in: DROP
+      policy_out: ACCEPT
+
+      [RULES]
+      # SSH access (LAN only)
+      IN ACCEPT -p tcp -dport {{ registry_lxc_ssh_port }} -source 192.168.178.0/24 -log nolog
+      # Registry API: reverse proxy only
+      {% for src in registry_lxc_allowed_5000_sources %}
+      IN ACCEPT -p tcp -dport {{ registry_lxc_port }} -source {{ src }} -log nolog
+      {% endfor %}
+      # ICMP (ping)
+      IN ACCEPT -p icmp -log nolog
+      FWEOF
+  changed_when: true
+  notify: Reload pve-firewall
+
+- name: Get current net0 configuration
+  ansible.builtin.command:
+    cmd: "pct config {{ registry_lxc_vmid }}"
+  register: registry_net0_config
+  changed_when: false
+
+- name: Enable firewall on container network interface
+  ansible.builtin.command:
+    cmd: >
+      pct set {{ registry_lxc_vmid }} --net0
+      name=eth0,bridge={{ registry_lxc_bridge }},ip={{ registry_lxc_ip }}/{{ registry_lxc_netmask }},gw={{ registry_lxc_gateway }},firewall=1
+  when: "'firewall=1' not in registry_net0_config.stdout"
+  changed_when: true

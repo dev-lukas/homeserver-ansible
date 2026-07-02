@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+# Distribution registry v3 configuration.
+version: 0.1
+log:
+  level: warn
+http:
+  addr: :{{ registry_lxc_port }}
+  tls:
+    certificate: /etc/registry/tls/registry.crt
+    key: /etc/registry/tls/registry.key
+auth:
+  htpasswd:
+    realm: registry
+    path: /etc/registry/htpasswd
+storage:
+  filesystem:
+    rootdirectory: {{ registry_lxc_data_mp }}
+  delete:
+    enabled: true
+  cache:
+    blobdescriptor: inmemory
