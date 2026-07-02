@@ -1,0 +1,126 @@
+---
+# Install the distribution registry as a hardened systemd service.
+# Runs inside the LXC (delegated over SSH).
+
+- name: Create registry system user
+  ansible.builtin.user:
+    name: "{{ registry_lxc_user }}"
+    uid: "{{ registry_lxc_user_uid }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Ensure registry data mount is owned by the registry user
+  ansible.builtin.file:
+    path: "{{ registry_lxc_data_mp }}"
+    state: directory
+    owner: "{{ registry_lxc_user }}"
+    group: "{{ registry_lxc_user }}"
+    mode: "0750"
+
+- name: Download distribution release tarball
+  ansible.builtin.get_url:
+    url: "{{ registry_lxc_download_url }}"
+    dest: "/tmp/registry_{{ registry_lxc_version }}.tar.gz"
+    checksum: "sha256:{{ registry_lxc_binary_sha256 }}"
+    mode: "0644"
+  register: registry_tarball
+
+- name: Extract registry binary
+  ansible.builtin.unarchive:
+    src: "/tmp/registry_{{ registry_lxc_version }}.tar.gz"
+    dest: /usr/local/bin
+    remote_src: true
+    include:
+      - registry
+    owner: root
+    group: root
+    mode: "0755"
+  when: registry_tarball is changed
+  notify: Restart registry
+
+- name: Create registry config directory
+  ansible.builtin.file:
+    path: /etc/registry
+    state: directory
+    owner: root
+    group: "{{ registry_lxc_user }}"
+    mode: "0750"
+
+- name: Create registry TLS directory
+  ansible.builtin.file:
+    path: /etc/registry/tls
+    state: directory
+    owner: root
+    group: "{{ registry_lxc_user }}"
+    mode: "0750"
+
+# Self-signed cert for the proxy->registry hop only. nginx uses
+# proxy_ssl_verify off for this backend; clients never see this cert.
+- name: Generate self-signed TLS certificate
+  ansible.builtin.command:
+    cmd: >
+      openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes
+      -keyout /etc/registry/tls/registry.key
+      -out /etc/registry/tls/registry.crt
+      -subj "/CN={{ registry_lxc_hostname }}"
+      -addext "subjectAltName=IP:{{ registry_lxc_ip }},DNS:{{ registry_lxc_hostname }}"
+  args:
+    creates: /etc/registry/tls/registry.crt
+
+- name: Set TLS file ownership
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: "{{ registry_lxc_user }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/registry/tls/registry.crt, mode: "0644" }
+    - { path: /etc/registry/tls/registry.key, mode: "0640" }
+
+- name: Deploy htpasswd (bcrypt required by distribution v3)
+  ansible.builtin.copy:
+    dest: /etc/registry/htpasswd
+    content: |
+      {{ registry_lxc_htpasswd }}
+    owner: root
+    group: "{{ registry_lxc_user }}"
+    mode: "0640"
+  no_log: true
+  notify: Restart registry
+
+- name: Deploy registry configuration
+  ansible.builtin.template:
+    src: config.yml.j2
+    dest: /etc/registry/config.yml
+    owner: root
+    group: "{{ registry_lxc_user }}"
+    mode: "0640"
+  notify: Restart registry
+
+- name: Deploy registry systemd unit
+  ansible.builtin.template:
+    src: registry.service.j2
+    dest: /etc/systemd/system/registry.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart registry
+
+- name: Enable and start registry service
+  ansible.builtin.systemd:
+    name: registry
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for registry to answer (401 = up, auth enforced)
+  ansible.builtin.uri:
+    url: "https://127.0.0.1:{{ registry_lxc_port }}/v2/"
+    method: GET
+    validate_certs: false
+    status_code: [401]
+  register: registry_health
+  retries: 10
+  delay: 3
+  until: registry_health.status == 401

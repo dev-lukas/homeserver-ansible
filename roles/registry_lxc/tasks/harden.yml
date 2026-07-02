@@ -1,0 +1,62 @@
+---
+# Security hardening inside the registry LXC (runs over SSH, delegated).
+# Same baseline as the other Debian LXCs: SSH key-only + sysctl. Network
+# exposure is controlled by the Proxmox host firewall (proxmox_firewall.yml);
+# the registry service itself is sandboxed in its systemd unit.
+
+- name: Disable root password login via SSH
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PermitRootLogin"
+    line: "PermitRootLogin prohibit-password"
+    backup: true
+  register: registry_sshd_root
+
+- name: Disable password authentication for SSH
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PasswordAuthentication"
+    line: "PasswordAuthentication no"
+  register: registry_sshd_pw
+
+- name: Restart SSH if config changed
+  ansible.builtin.systemd:
+    name: ssh
+    state: restarted
+  when: registry_sshd_root is changed or registry_sshd_pw is changed
+
+- name: Configure sysctl security settings
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-security.conf
+    mode: "0644"
+    content: |
+      # Ignore ICMP redirects
+      net.ipv4.conf.all.accept_redirects = 0
+      net.ipv6.conf.all.accept_redirects = 0
+
+      # Ignore source-routed packets
+      net.ipv4.conf.all.accept_source_route = 0
+      net.ipv6.conf.all.accept_source_route = 0
+
+      # Log martian packets
+      net.ipv4.conf.all.log_martians = 1
+
+      # Enable SYN cookies
+      net.ipv4.tcp_syncookies = 1
+
+# Some net.* keys are read-only in an unprivileged container netns; apply
+# best-effort so a sandboxed key never fails the run.
+- name: Apply sysctl settings (best-effort in LXC)
+  ansible.builtin.command:
+    cmd: sysctl -p /etc/sysctl.d/99-security.conf
+  changed_when: false
+  failed_when: false
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - curl
+      - python3
+      - logrotate
+    state: present
+    update_cache: true

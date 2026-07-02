@@ -47,9 +47,3 @@
     name: docker
     state: started
     enabled: true
-
-- name: Create stacks directory
-  ansible.builtin.file:
-    path: "{{ ci_runner_stacks_dir }}"
-    state: directory
-    mode: "0755"

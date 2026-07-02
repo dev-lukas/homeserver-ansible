@@ -67,6 +67,14 @@
         - lxc
         - containers
 
+    # Always-on container registry (must exist before the reverse proxy that
+    # publishes it as registry.lukas-roth.dev).
+    - role: registry_lxc
+      tags:
+        - registry
+        - lxc
+        - containers
+
     - role: homeassistant_vm
       tags:
         - homeassistant

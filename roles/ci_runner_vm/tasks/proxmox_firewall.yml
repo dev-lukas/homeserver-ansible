@@ -27,9 +27,6 @@
       # SSH access to VM
       IN ACCEPT -p tcp -dport {{ ci_runner_ssh_port }} -log nolog
 
-      # Container registry from internal network
-      IN ACCEPT -source 192.168.178.0/24 -p tcp -dport {{ ci_runner_registry_port }} -log nolog
-
       # Allow ICMP (ping)
       IN ACCEPT -p icmp -log nolog
       FWEOF

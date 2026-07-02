@@ -142,7 +142,13 @@ reverse_proxy_backends:
     internal_only: true
   - name: "registry"
     subdomain: "registry"
-    backend_host: "192.168.178.13"
+    # Registry LXC (106): terminates TLS + htpasswd itself; the vhost
+    # generator emits proxy_ssl_verify off for https backends.
+    # Rollback (old registry inside CI VM 108, until decommissioned):
+    # backend_host "192.168.178.13", drop backend_protocol, and
+    # `docker start registry` in the VM.
+    backend_host: "192.168.178.14"
+    backend_protocol: "https"
     backend_port: 5000
     websocket: false
     internal_only: false
