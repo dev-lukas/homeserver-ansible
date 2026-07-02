@@ -1,6 +1,7 @@
 ---
 # CI Runner VM role
-# Creates a lean Debian 13 VM with GitHub Actions runner and container registry
+# Creates a lean Debian 13 VM with per-repo GitHub Actions runners and the
+# CI toolchain. (The container registry lives in its own LXC: registry_lxc.)
 
 - name: Check if VM exists
   ansible.builtin.command:
@@ -15,13 +16,28 @@
     - ci
     - vm
 
+# Pause the autostart watchdog for the duration of this play: it would
+# otherwise `qm shutdown` the VM mid-configuration once GitHub shows no
+# active jobs for 10 minutes. Re-enabled at the end of the role. If a run
+# aborts in between, restart it with:
+#   systemctl start ci-runner-autostart.timer
+- name: Pause ci-runner autostart watchdog during provisioning
+  ansible.builtin.systemd:
+    name: ci-runner-autostart.timer
+    state: stopped
+  failed_when: false
+  tags:
+    - ci_runner
+    - ci
+    - vm
+
 # Phase 1: Create VM on Proxmox host
 - name: Download Debian cloud image if not present
   ansible.builtin.get_url:
     url: "{{ ci_runner_cloud_image_url }}"
     dest: "{{ ci_runner_cloud_image_path }}"
     mode: "0644"
-    timeout: 60
+    timeout: 600
   register: cloud_image_download
   when: vm_status.rc != 0
 
@@ -56,6 +72,23 @@
   changed_when: "'CHANGED' in ci_runner_onboot_set.stdout"
   tags:
     - onboot
+
+# Reconcile CPU/RAM/disk of the existing VM with the desired vars (qm create
+# only applies them on first build). May shut the VM down; the "Start the VM"
+# task below boots it with the new specs.
+- name: Reconcile VM specs with desired values
+  ansible.builtin.include_tasks:
+    file: reconcile.yml
+    apply:
+      tags:
+        - ci_runner
+        - ci
+        - vm
+  when: vm_status.rc == 0
+  tags:
+    - ci_runner
+    - ci
+    - vm
 
 - name: Import cloud image as disk
   ansible.builtin.command:
@@ -248,19 +281,6 @@
         - ci
         - vm
 
-    - name: Deploy container registry
-      ansible.builtin.include_tasks:
-        file: registry.yml
-        apply:
-          tags:
-            - ci_runner
-            - ci
-            - vm
-      tags:
-        - ci_runner
-        - ci
-        - vm
-
     - name: Install GitHub Actions runner
       ansible.builtin.include_tasks:
         file: github_runner.yml
@@ -273,6 +293,21 @@
         - ci_runner
         - ci
         - vm
+
+    - name: Install CI toolchain (shared caches, uv pythons, playwright deps)
+      ansible.builtin.include_tasks:
+        file: toolchain.yml
+        apply:
+          tags:
+            - ci_runner
+            - ci
+            - vm
+            - toolchain
+      tags:
+        - ci_runner
+        - ci
+        - vm
+        - toolchain
 
     - name: Configure unattended upgrades
       ansible.builtin.include_tasks:
@@ -298,6 +333,19 @@
         - ci_runner
         - ci
         - vm
+  tags:
+    - ci_runner
+    - ci
+    - vm
+
+# Counterpart to the pause at the top of this role. The watchdog resumes
+# start/stop duty; it will shut the VM down again once GitHub shows no
+# active jobs for the idle window.
+- name: Resume ci-runner autostart watchdog
+  ansible.builtin.systemd:
+    name: ci-runner-autostart.timer
+    state: started
+  failed_when: false
   tags:
     - ci_runner
     - ci
