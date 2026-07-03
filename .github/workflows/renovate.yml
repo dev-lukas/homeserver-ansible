@@ -29,7 +29,7 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v6.0.3
 
       # Renovate is limited to PUBLIC repositories: the list is resolved fresh
       # on every run (this API endpoint only ever returns public repos, even
