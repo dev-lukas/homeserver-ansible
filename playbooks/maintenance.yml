@@ -1,7 +1,14 @@
 ---
 # Maintenance playbook - Updates all infrastructure components
 # Usage: ansible-playbook playbooks/maintenance.yml --ask-vault-pass
-# Or target specific hosts: ansible-playbook playbooks/maintenance.yml --ask-vault-pass --limit proxmox-root
+# Or target a single guest via its play tag, e.g.:
+#   ansible-playbook playbooks/maintenance.yml --ask-vault-pass --tags immich
+#
+# Covered guests: Proxmox host, AdGuard LXC (100), Reverse Proxy LXC (103),
+# Registry LXC (106), Apps LXC (102: Immich + local services), Jellyfin LXC
+# (105), Media Services LXC, Dev VM, CI Runner VM (108, woken on demand).
+# NOT covered on purpose: Home Assistant VM - HAOS is an appliance that
+# manages its own OS/core updates through Home Assistant itself.
 
 - name: Maintenance - Proxmox Host
   hosts: proxmox-root
@@ -184,6 +191,15 @@
       when: nginx_test.rc == 0
       changed_when: false
 
+    # Report-only: never auto-reboot the proxy (it fronts every service);
+    # the summary flags it so the reboot can be done at a convenient time.
+    - name: Check if reboot is required
+      ansible.builtin.command:
+        cmd: "pct exec {{ reverse_proxy_vmid }} -- test -f /var/run/reboot-required"
+      register: rp_reboot
+      changed_when: false
+      failed_when: false
+
     - name: Record Reverse Proxy maintenance result
       ansible.builtin.set_fact:
         maintenance_report: "{{ maintenance_report | default([]) + [_entry] }}"
@@ -191,18 +207,148 @@
         _entry:
           host: "Reverse Proxy LXC"
           upgraded: "{{ apt_upgrade.changed }}"
-          reboot_required: false
+          reboot_required: "{{ rp_reboot.rc == 0 }}"
           rebooted: false
 
-- name: Maintenance - Local Services VM
+- name: Maintenance - Registry LXC
   hosts: proxmox-root
   gather_facts: false
-  tags: [local_services, maintenance]
+  tags: [registry, maintenance]
   vars:
-    local_services_ip: "192.168.178.15"  # apps LXC (replaced the local-services VM)
+    registry_vmid: "{{ hostvars['proxmox-root']['registry_lxc_vmid'] | default(106) }}"
+    registry_port: "{{ hostvars['proxmox-root']['registry_lxc_port'] | default(5000) }}"
+  tasks:
+    # The registry LXC only exists after the CI-VM -> LXC 106 cutover
+    # (docs/registry.md); skip cleanly until it is live.
+    - name: Check registry LXC status
+      ansible.builtin.command:
+        cmd: "pct status {{ registry_vmid }}"
+      register: registry_status
+      changed_when: false
+      failed_when: false
+
+    - name: Note skipped registry LXC
+      ansible.builtin.debug:
+        msg: "Registry LXC {{ registry_vmid }} not present/running - skipping (pre-cutover?)"
+      when: "'running' not in registry_status.stdout"
+
+    - name: Maintain registry LXC
+      when: "'running' in registry_status.stdout"
+      block:
+        # OS packages only. The registry binary itself is pinned + checksummed
+        # (registry_lxc_version); bump it via proxmox.yml --tags registry.
+        - name: Upgrade packages (lock-aware, self-healing, retried)
+          ansible.builtin.shell:
+            cmd: "pct exec {{ registry_vmid }} -- bash -s"
+            stdin: "{{ apt_maintenance_script }}"
+          register: apt_upgrade
+          changed_when: "'PKGS_CHANGED' in apt_upgrade.stdout"
+          until: apt_upgrade.rc == 0
+          retries: 3
+          delay: 30
+
+        - name: Check if reboot is required
+          ansible.builtin.command:
+            cmd: "pct exec {{ registry_vmid }} -- test -f /var/run/reboot-required"
+          register: registry_reboot
+          changed_when: false
+          failed_when: false
+
+        # An LXC reboot is a few seconds of downtime; pulls simply retry.
+        - name: Reboot registry LXC to apply updates
+          ansible.builtin.command:
+            cmd: "pct reboot {{ registry_vmid }}"
+          when: registry_reboot.rc == 0
+          changed_when: true
+
+        - name: Wait for registry to answer (401 = up, auth enforced)
+          ansible.builtin.command:
+            cmd: >-
+              pct exec {{ registry_vmid }} -- curl -sSk -o /dev/null
+              -w '%{http_code}' https://127.0.0.1:{{ registry_port }}/v2/
+          register: registry_health
+          retries: 20
+          delay: 5
+          until: registry_health.stdout == "401"
+          changed_when: false
+
+        - name: Record Registry maintenance result
+          ansible.builtin.set_fact:
+            maintenance_report: "{{ maintenance_report | default([]) + [_entry] }}"
+          vars:
+            _entry:
+              host: "Registry LXC"
+              upgraded: "{{ apt_upgrade.changed }}"
+              reboot_required: "{{ registry_reboot.rc == 0 }}"
+              rebooted: "{{ registry_reboot.rc == 0 }}"
+
+- name: Maintenance - Jellyfin LXC
+  hosts: proxmox-root
+  gather_facts: false
+  tags: [jellyfin, maintenance]
+  vars:
+    jellyfin_vmid: "{{ hostvars['proxmox-root']['jellyfin_vmid'] | default(105) }}"
+  tasks:
+    # Jellyfin is installed from its apt repo inside the LXC, so the regular
+    # apt upgrade also updates Jellyfin itself.
+    - name: Upgrade packages (lock-aware, self-healing, retried)
+      ansible.builtin.shell:
+        cmd: "pct exec {{ jellyfin_vmid }} -- bash -s"
+        stdin: "{{ apt_maintenance_script }}"
+      register: apt_upgrade
+      changed_when: "'PKGS_CHANGED' in apt_upgrade.stdout"
+      until: apt_upgrade.rc == 0
+      retries: 3
+      delay: 30
+
+    - name: Verify Jellyfin service is active
+      ansible.builtin.command:
+        cmd: "pct exec {{ jellyfin_vmid }} -- systemctl is-active jellyfin"
+      register: jellyfin_active
+      retries: 6
+      delay: 10
+      until: jellyfin_active.rc == 0
+      changed_when: false
+
+    # Report-only: never auto-reboot (may interrupt an active stream).
+    - name: Check if reboot is required
+      ansible.builtin.command:
+        cmd: "pct exec {{ jellyfin_vmid }} -- test -f /var/run/reboot-required"
+      register: jellyfin_reboot
+      changed_when: false
+      failed_when: false
+
+    - name: Record Jellyfin maintenance result
+      ansible.builtin.set_fact:
+        maintenance_report: "{{ maintenance_report | default([]) + [_entry] }}"
+      vars:
+        _entry:
+          host: "Jellyfin LXC"
+          upgraded: "{{ apt_upgrade.changed }}"
+          reboot_required: "{{ jellyfin_reboot.rc == 0 }}"
+          rebooted: false
+
+# One play for the combined apps LXC (102): the former "Local Services VM"
+# and "Immich VM" plays both targeted this same guest, running the apt
+# maintenance (and a possible reboot) twice per run.
+- name: Maintenance - Apps LXC (Immich + local services)
+  hosts: proxmox-root
+  gather_facts: false
+  tags: [apps_lxc, local_services, immich, maintenance]
+  vars:
+    apps_ip: "192.168.178.15"
     stacks_dir: "/opt/stacks"
     ssh_key_path: "/tmp/.ansible_deploy_key"
     ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ssh_key_path }}"
+    immich_web_port: 2283
+    # Immich uses the floating `release` tag (immich_version), so pull+up
+    # performs the app update; the pinned postgres image is not touched.
+    apps_stacks:
+      - immich
+      - bentopdf
+      - vert
+      - mealie
+      - homepage
 
   pre_tasks:
     - name: Write deploy key to temp file on Proxmox
@@ -216,32 +362,39 @@
     - name: Run hardened apt maintenance
       ansible.builtin.include_tasks: tasks/maintenance_apt.yml
       vars:
-        maint_label: "Local Services VM"
-        maint_ip: "{{ local_services_ip }}"
+        maint_label: "Apps LXC"
+        maint_ip: "{{ apps_ip }}"
         maint_auto_reboot: true
 
     - name: Pull and recreate Docker stacks
       ansible.builtin.shell:
-        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} 'cd {{ stacks_dir }}/{{ item }} && docker compose pull && docker compose up -d'"
-      loop:
-        - bentopdf
-        - vert
-        - mealie
-        - homepage
+        cmd: "ssh {{ ssh_opts }} root@{{ apps_ip }} 'cd {{ stacks_dir }}/{{ item }} && docker compose pull && docker compose up -d'"
+      loop: "{{ apps_stacks }}"
       register: stack_updates
+      changed_when: false
+
+    # Immich runs DB migrations on version jumps; give it time to come up
+    # before declaring the run healthy.
+    - name: Wait for Immich to answer after update
+      ansible.builtin.shell:
+        cmd: "ssh {{ ssh_opts }} root@{{ apps_ip }} 'curl -fsS -o /dev/null http://127.0.0.1:{{ immich_web_port }}/api/server/ping'"
+      register: immich_ping
+      retries: 60
+      delay: 5
+      until: immich_ping.rc == 0
       changed_when: false
 
     - name: Prune unused Docker images
       ansible.builtin.shell:
-        cmd: "ssh {{ ssh_opts }} root@{{ local_services_ip }} docker image prune -f"
+        cmd: "ssh {{ ssh_opts }} root@{{ apps_ip }} docker image prune -f"
       register: prune_result
       changed_when: false
 
     - name: Display Docker update summary
       ansible.builtin.debug:
         msg: |
-          Local Services VM updated.
-          Docker stacks recreated: bentopdf, vert, mealie, homepage
+          Apps LXC updated.
+          Docker stacks recreated: {{ apps_stacks | join(', ') }}
           Pruned: {{ prune_result.stdout_lines[-1] | default('Done') }}
 
   post_tasks:
@@ -354,65 +507,6 @@
       run_once: true
       tags: always
 
-- name: Maintenance - Immich VM
-  hosts: proxmox-root
-  gather_facts: false
-  tags: [immich, maintenance]
-  vars:
-    immich_ip: "192.168.178.15"  # apps LXC (replaced the immich VM)
-    stacks_dir: "/opt/stacks"
-    ssh_key_path: "/tmp/.ansible_deploy_key"
-    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ssh_key_path }}"
-
-  pre_tasks:
-    - name: Write deploy key to temp file on Proxmox
-      ansible.builtin.copy:
-        content: "{{ vault_ansible_deploy_private_key }}"
-        dest: "{{ ssh_key_path }}"
-        mode: "0600"
-      no_log: true
-
-  tasks:
-    - name: Run hardened apt maintenance
-      ansible.builtin.include_tasks: tasks/maintenance_apt.yml
-      vars:
-        maint_label: "Immich VM"
-        maint_ip: "{{ immich_ip }}"
-        maint_auto_reboot: true
-
-    - name: Update Immich stack
-      ansible.builtin.shell:
-        cmd: "ssh {{ ssh_opts }} root@{{ immich_ip }} 'cd {{ stacks_dir }}/immich && docker compose pull && docker compose up -d'"
-      changed_when: false
-
-    - name: Prune unused Docker images
-      ansible.builtin.shell:
-        cmd: "ssh {{ ssh_opts }} root@{{ immich_ip }} docker image prune -f"
-      register: prune_result
-      changed_when: false
-
-    - name: Display update summary
-      ansible.builtin.debug:
-        msg: |
-          Immich VM updated.
-          Packages upgraded: {{ maint_apt.changed }}
-          Pruned: {{ prune_result.stdout_lines[-1] | default('Done') }}
-
-  post_tasks:
-    - name: Remove deploy key from Proxmox
-      ansible.builtin.file:
-        path: "{{ ssh_key_path }}"
-        state: absent
-
-    - name: Remove local deploy key
-      ansible.builtin.file:
-        path: /tmp/.ansible_deploy_key
-        state: absent
-      delegate_to: localhost
-      become: false
-      run_once: true
-      tags: always
-
 - name: Maintenance - Development VM
   hosts: proxmox-root
   gather_facts: false
@@ -474,6 +568,7 @@
   tags: [ci_runner, maintenance]
   vars:
     ci_runner_ip: "{{ hostvars['proxmox-root']['ci_runner_ip'] | default('192.168.178.13') }}"
+    ci_runner_vmid: "{{ hostvars['proxmox-root']['ci_runner_vmid'] | default(108) }}"
     ssh_key_path: "/tmp/.ansible_deploy_key"
     ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ssh_key_path }}"
 
@@ -486,6 +581,27 @@
       no_log: true
 
   tasks:
+    # The CI VM is on-demand (onboot 0, watchdog-managed): wake it for
+    # maintenance and shut it down again afterwards if we started it.
+    - name: Check CI runner VM status
+      ansible.builtin.command:
+        cmd: "qm status {{ ci_runner_vmid }}"
+      register: ci_vm_status
+      changed_when: false
+
+    - name: Start CI runner VM for maintenance
+      ansible.builtin.command:
+        cmd: "qm start {{ ci_runner_vmid }}"
+      when: "'running' not in ci_vm_status.stdout"
+      changed_when: true
+
+    - name: Wait for CI runner SSH
+      ansible.builtin.wait_for:
+        host: "{{ ci_runner_ip }}"
+        port: 22
+        timeout: 300
+      when: "'running' not in ci_vm_status.stdout"
+
     - name: Run hardened apt maintenance
       ansible.builtin.include_tasks: tasks/maintenance_apt.yml
       vars:
@@ -494,9 +610,16 @@
         # Set to false if you want to avoid interrupting in-flight CI jobs.
         maint_auto_reboot: true
 
-    - name: Update registry container
+    # Legacy docker registry on the CI VM; gone after the LXC-106 cutover
+    # (docs/registry.md), so skip when the stack directory no longer exists.
+    - name: Update legacy registry container (pre-cutover only)
       ansible.builtin.shell:
-        cmd: "ssh {{ ssh_opts }} root@{{ ci_runner_ip }} 'cd /opt/stacks/registry && docker compose pull && docker compose up -d'"
+        cmd: >-
+          ssh {{ ssh_opts }} root@{{ ci_runner_ip }}
+          'if [ -d /opt/stacks/registry ]; then
+             cd /opt/stacks/registry && docker compose pull && docker compose up -d;
+           else echo LEGACY_REGISTRY_ABSENT; fi'
+      register: legacy_registry
       changed_when: false
 
     - name: Prune unused Docker images
@@ -510,7 +633,14 @@
         msg: |
           CI Runner VM updated.
           Packages upgraded: {{ maint_apt.changed }}
+          Legacy registry: {{ 'absent (LXC 106 is authoritative)' if 'LEGACY_REGISTRY_ABSENT' in legacy_registry.stdout else 'updated' }}
           Pruned: {{ prune_result.stdout_lines[-1] | default('Done') }}
+
+    - name: Shut CI runner VM back down (was only started for maintenance)
+      ansible.builtin.command:
+        cmd: "qm shutdown {{ ci_runner_vmid }} --timeout 120"
+      when: "'running' not in ci_vm_status.stdout"
+      changed_when: true
 
   post_tasks:
     - name: Remove deploy key from Proxmox
