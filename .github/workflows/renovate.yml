@@ -31,6 +31,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
 
+      # Renovate is limited to PUBLIC repositories: the list is resolved fresh
+      # on every run (this API endpoint only ever returns public repos, even
+      # when authenticated as the owner), so visibility changes and new public
+      # repos are picked up automatically without touching this file.
+      - name: Resolve public repositories
+        id: public_repos
+        env:
+          GH_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+        run: |
+          repos=$(curl -fsS --retry 3 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/users/dev-lukas/repos?type=owner&per_page=100" \
+            | jq -c '[.[] | select(.archived | not) | .full_name] | sort')
+          echo "Public repos ($(jq length <<<"$repos")): $(jq -r 'join(", ")' <<<"$repos")"
+          echo "list=$repos" >> "$GITHUB_OUTPUT"
+
       - name: Run Renovate
         uses: renovatebot/github-action@v46.1.17
         with:
@@ -38,6 +55,7 @@ jobs:
           configurationFile: .github/renovate-global.js
           renovate-version: 43.251.0
         env:
+          RENOVATE_PUBLIC_REPOS: ${{ steps.public_repos.outputs.list }}
           RENOVATE_DRY_RUN: ${{ inputs.dryRun == true && 'full' || '' }}
           RENOVATE_REGISTRY_PASSWORD: ${{ secrets.RENOVATE_REGISTRY_PASSWORD }}
           LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
