@@ -36,6 +36,18 @@
     user: root
     state: "{{ 'present' if autoaspm_enabled | default(true) else 'absent' }}"
 
+# The root port's LTR-enable bit can be cleared at runtime without a reboot
+# (observed 2026-07-03 after the CI-runner VM rebuild; the exact writer is
+# unknown since PCI config writes leave no trace). All writes in autoaspm.py
+# are masked and idempotent, so re-asserting them periodically is safe.
+- name: Configure AutoASPM re-assert cron job
+  ansible.builtin.cron:
+    name: "Realtek RTL8127 ASPM re-assert"
+    minute: "*/5"
+    job: "/usr/local/sbin/autoaspm.py > /dev/null 2>&1"
+    user: root
+    state: "{{ 'present' if autoaspm_enabled | default(true) else 'absent' }}"
+
 - name: Run powertop auto-tune now
   ansible.builtin.command: /usr/sbin/powertop --auto-tune
   changed_when: false
