@@ -43,6 +43,7 @@ ci_runner_repos:
   - firephenix-website
   - homeserver-ansible
   - portfolio
+  - tsq
 
 # Toolchain settings (tasks/toolchain.yml)
 # Python minors the python-checks workflow may request (Debian 13 ships only
