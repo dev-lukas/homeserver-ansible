@@ -20,7 +20,9 @@ log() { logger -t ci-runner-autostart "$*"; }
 active=0
 for repo in $REPOS; do
   for st in queued in_progress; do
-    cnt=$(curl -fsS \
+    # -L: a renamed repo answers 301; without following it the watchdog
+    # silently sees zero runs and never wakes the VM (bit us 2026-07-10).
+    cnt=$(curl -fsSL \
       -H "Authorization: Bearer $GH_PAT" \
       -H "Accept: application/vnd.github+json" \
       -H "X-GitHub-Api-Version: 2022-11-28" \
