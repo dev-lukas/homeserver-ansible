@@ -45,6 +45,12 @@ ci_runner_repos:
   - portfolio
   - atsq
 
+# Repos removed/renamed out of ci_runner_repos: their runner service + dir
+# get uninstalled from the VM on the next run (GitHub-side registrations
+# expire on their own). Safe to empty this list once applied.
+ci_runner_removed_repos:
+  - tsq  # renamed to atsq 2026-07-10 (PyPI name conflict)
+
 # Toolchain settings (tasks/toolchain.yml)
 # Python minors the python-checks workflow may request (Debian 13 ships only
 # 3.13; the rest come from uv-managed CPython builds under /opt/uv-pythons).

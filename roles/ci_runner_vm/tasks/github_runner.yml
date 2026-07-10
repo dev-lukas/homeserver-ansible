@@ -181,3 +181,34 @@
       {% endfor %}
       (Re)registered this run: {{ runners_to_register | default([]) | join(', ') or 'none' }}
       Labels: {{ ci_runner_runner_labels }}
+
+# --- Cleanup of removed/renamed repos ----------------------------------------
+# Uninstalls the runner service and directory for repos that left
+# ci_runner_repos (e.g. the tsq -> atsq repo rename). The GitHub-side
+# registration is intentionally left alone: it shows up as offline once the
+# local runner is gone and GitHub garbage-collects it after ~14 days.
+
+- name: Check for stale runner dirs of removed repos
+  ansible.builtin.stat:
+    path: "{{ ci_runner_runner_dir }}/{{ item }}"
+  loop: "{{ ci_runner_removed_repos }}"
+  register: removed_runner_dirs
+
+- name: Uninstall runner service of removed repos
+  ansible.builtin.command:
+    cmd: ./svc.sh uninstall
+    chdir: "{{ ci_runner_runner_dir }}/{{ item.item }}"
+    removes: "/etc/systemd/system/actions.runner.{{ ci_runner_github_user }}-{{ item.item }}.{{ ci_runner_hostname }}-{{ item.item }}.service"
+  loop: "{{ removed_runner_dirs.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+
+- name: Remove stale runner directory of removed repos
+  ansible.builtin.file:
+    path: "{{ ci_runner_runner_dir }}/{{ item.item }}"
+    state: absent
+  loop: "{{ removed_runner_dirs.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
