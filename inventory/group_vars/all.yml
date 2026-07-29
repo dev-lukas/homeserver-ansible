@@ -34,3 +34,16 @@ apt_maintenance_script: |
   if ! printf '%s\n' "$upgrade_out" | grep -q '^0 upgraded, 0 newly installed, 0 to remove'; then
     echo "PKGS_CHANGED"
   fi
+
+# Hardened apk upgrade routine for Alpine guests, piped into `sh -s` through
+# `pct exec`. Mirrors apt_maintenance_script and its PKGS_CHANGED marker.
+# stdin from /dev/null and stderr captured, so no child is left holding the
+# exec pipe. Callers must still wrap the exec in `timeout`.
+apk_maintenance_script: |
+  set -eu
+  apk update
+  upgrade_out=$(apk upgrade --no-cache 2>&1 </dev/null)
+  printf '%s\n' "$upgrade_out"
+  if printf '%s\n' "$upgrade_out" | grep -qE '^\([0-9]+/[0-9]+\) (Upgrading|Installing|Purging)'; then
+    echo "PKGS_CHANGED"
+  fi
