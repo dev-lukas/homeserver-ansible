@@ -128,28 +128,40 @@
   tags: [adguard, maintenance]
   vars:
     adguard_vmid: "{{ hostvars['proxmox-root']['adguard_vmid'] | default(100) }}"
+    # `pct exec` can wedge after the inner command finishes and the command
+    # module has no timeout, so cap it: otherwise one hang blocks the run.
+    adguard_apk_timeout: 900
+    adguard_binary_timeout: 300
   tasks:
-    - name: Update Alpine packages
-      ansible.builtin.command:
-        cmd: "pct exec {{ adguard_vmid }} -- apk update"
-      changed_when: false
-
-    - name: Upgrade Alpine packages
-      ansible.builtin.command:
-        cmd: "pct exec {{ adguard_vmid }} -- apk upgrade --no-cache"
+    - name: Upgrade Alpine packages (timeout-capped, retried)
+      ansible.builtin.shell:
+        cmd: "timeout -k 30 {{ adguard_apk_timeout }} pct exec {{ adguard_vmid }} -- sh -s"
+        stdin: "{{ apk_maintenance_script }}"
       register: apk_upgrade
-      changed_when: "'Installing' in apk_upgrade.stdout or 'Upgrading' in apk_upgrade.stdout"
+      changed_when: "'PKGS_CHANGED' in apk_upgrade.stdout"
+      until: apk_upgrade.rc == 0
+      retries: 3
+      delay: 30
 
+    # Fetches from GitHub: failed_when covers a bad exit, not a stalled fetch.
     - name: Update AdGuard Home binary
       ansible.builtin.command:
-        cmd: "pct exec {{ adguard_vmid }} -- /opt/AdGuardHome/AdGuardHome --update"
+        cmd: >-
+          timeout -k 15 {{ adguard_binary_timeout }}
+          pct exec {{ adguard_vmid }} --
+          /opt/AdGuardHome/AdGuardHome --update
       register: adguard_update
-      changed_when: "'updated' in adguard_update.stdout.lower()"
+      changed_when: "'updated' in adguard_update.stdout | lower"
       failed_when: false
 
     - name: Display AdGuard update result
       ansible.builtin.debug:
-        msg: "{{ adguard_update.stdout | default('AdGuard update completed') }}"
+        msg: >-
+          {{
+            'TIMED OUT after ' ~ adguard_binary_timeout ~ 's - binary left untouched, rerun with --tags adguard'
+            if adguard_update.rc == 124
+            else (adguard_update.stdout | default('AdGuard update completed'))
+          }}
 
     - name: Record AdGuard maintenance result
       ansible.builtin.set_fact:
