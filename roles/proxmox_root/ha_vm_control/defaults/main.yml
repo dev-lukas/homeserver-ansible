@@ -1,0 +1,35 @@
+---
+# Home Assistant VM power control: a Proxmox API token that can start and
+# gracefully shut down the dev VM, and nothing else.
+#
+# Home Assistant calls the Proxmox API directly (rest_command), so there is no
+# polling daemon and no HA credential on the host. The blast radius of the token
+# is bounded here, by role privileges plus an ACL on a single VM.
+
+ha_vm_control_enabled: true
+
+# Which VM Home Assistant may power. Defaults to the value from the dev_vm role
+# (same play), so there is a single source of truth.
+ha_vm_control_vmid: "{{ dev_vm_vmid | default(107) }}"
+
+# Custom PVE role. Deliberately only these two privileges:
+#   VM.Audit     - read status (is it running?)
+#   VM.PowerMgmt - start / shutdown / stop
+# Notably NOT VM.Console, VM.Config.*, VM.Allocate or anything under Sys.*, so
+# the token cannot reconfigure, delete or console into the VM, nor touch the
+# host. Do not widen this list to make something else convenient — create a
+# second, separately scoped token instead.
+ha_vm_control_role: "HAVMPower"
+ha_vm_control_privs:
+  - "VM.Audit"
+  - "VM.PowerMgmt"
+
+# Dedicated API user in the PVE realm. No password is set: it is a token-only
+# identity and cannot log into the web UI.
+ha_vm_control_user: "hass@pve"
+ha_vm_control_token_name: "dev-vm"
+
+# Privilege separation: the token gets its own ACL rather than inheriting the
+# user's. If the user is ever granted broader rights, the token keeps exactly
+# the permissions granted below.
+ha_vm_control_token_privsep: true

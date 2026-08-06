@@ -1,0 +1,109 @@
+---
+# Creates the scoped Proxmox API token Home Assistant uses to power the dev VM.
+#
+# All four objects (role, user, ACL, token) are checked before being created, so
+# the play is idempotent and re-running it never rotates a live token.
+
+- name: Read existing PVE roles
+  ansible.builtin.command:
+    cmd: "pveum role list --output-format json"
+  register: ha_vm_control_existing_roles
+  changed_when: false
+
+- name: Create the {{ ha_vm_control_role }} role
+  ansible.builtin.command:
+    cmd: "pveum role add {{ ha_vm_control_role }} --privs '{{ ha_vm_control_privs | join(',') }}'"
+  when: ha_vm_control_role not in (ha_vm_control_existing_roles.stdout | from_json | map(attribute='roleid') | list)
+
+- name: Keep the role's privilege set in sync
+  ansible.builtin.command:
+    cmd: "pveum role modify {{ ha_vm_control_role }} --privs '{{ ha_vm_control_privs | join(',') }}'"
+  vars:
+    # `privs` comes back as a comma-separated string in arbitrary order.
+    ha_vm_control_current_privs: >-
+      {{ (ha_vm_control_existing_roles.stdout | from_json
+          | selectattr('roleid', 'equalto', ha_vm_control_role)
+          | map(attribute='privs') | first | default('')).split(',')
+         | reject('equalto', '') | sort }}
+  when:
+    - ha_vm_control_role in (ha_vm_control_existing_roles.stdout | from_json | map(attribute='roleid') | list)
+    - ha_vm_control_current_privs != (ha_vm_control_privs | sort)
+
+- name: Read existing PVE users
+  ansible.builtin.command:
+    cmd: "pveum user list --output-format json"
+  register: ha_vm_control_existing_users
+  changed_when: false
+
+- name: Create the {{ ha_vm_control_user }} API user
+  ansible.builtin.command:
+    cmd: >-
+      pveum user add {{ ha_vm_control_user }}
+      --comment 'Home Assistant dev VM power control (managed by Ansible)'
+  when: ha_vm_control_user not in (ha_vm_control_existing_users.stdout | from_json | map(attribute='userid') | list)
+
+- name: Read existing tokens for {{ ha_vm_control_user }}
+  ansible.builtin.command:
+    cmd: "pveum user token list {{ ha_vm_control_user }} --output-format json"
+  register: ha_vm_control_existing_tokens
+  changed_when: false
+
+- name: Create the API token
+  ansible.builtin.command:
+    cmd: >-
+      pveum user token add {{ ha_vm_control_user }} {{ ha_vm_control_token_name }}
+      --privsep {{ 1 if ha_vm_control_token_privsep else 0 }}
+      --comment 'Home Assistant rest_command (VM {{ ha_vm_control_vmid }} power only)'
+      --output-format json
+  register: ha_vm_control_new_token
+  when: ha_vm_control_token_name not in (ha_vm_control_existing_tokens.stdout | from_json | map(attribute='tokenid') | list)
+  no_log: true
+
+# Proxmox reveals a token's secret exactly once, at creation. If this is missed
+# the only recovery is deleting the token and creating a new one.
+- name: Show the new token secret (shown ONCE - copy it into HA secrets.yaml now)
+  ansible.builtin.debug:
+    msg: |
+      Add this line to Home Assistant's secrets.yaml:
+
+        pve_dev_vm_token: "PVEAPIToken={{ ha_vm_control_user }}!{{ ha_vm_control_token_name }}={{ (ha_vm_control_new_token.stdout | from_json).value }}"
+
+      Proxmox will never show this secret again. If it is lost, delete the token
+      with `pveum user token remove {{ ha_vm_control_user }} {{ ha_vm_control_token_name }}`
+      and re-run this play to issue a new one.
+  when: ha_vm_control_new_token is not skipped
+
+- name: Read existing ACLs
+  ansible.builtin.command:
+    cmd: "pveum acl list --output-format json"
+  register: ha_vm_control_existing_acls
+  changed_when: false
+
+# With privsep the token has no rights of its own until it is granted them, so
+# both the user and the token are given the role on /vms/<vmid> only.
+- name: Grant the user power rights on VM {{ ha_vm_control_vmid }} only
+  ansible.builtin.command:
+    cmd: >-
+      pveum acl modify /vms/{{ ha_vm_control_vmid }}
+      --users {{ ha_vm_control_user }} --roles {{ ha_vm_control_role }}
+  when: >-
+    ha_vm_control_existing_acls.stdout | from_json
+    | selectattr('path', 'equalto', '/vms/' ~ ha_vm_control_vmid)
+    | selectattr('ugid', 'equalto', ha_vm_control_user)
+    | selectattr('roleid', 'equalto', ha_vm_control_role)
+    | list | length == 0
+
+- name: Grant the token power rights on VM {{ ha_vm_control_vmid }} only
+  ansible.builtin.command:
+    cmd: >-
+      pveum acl modify /vms/{{ ha_vm_control_vmid }}
+      --tokens '{{ ha_vm_control_user }}!{{ ha_vm_control_token_name }}'
+      --roles {{ ha_vm_control_role }}
+  when:
+    - ha_vm_control_token_privsep | bool
+    - >-
+      ha_vm_control_existing_acls.stdout | from_json
+      | selectattr('path', 'equalto', '/vms/' ~ ha_vm_control_vmid)
+      | selectattr('ugid', 'equalto', ha_vm_control_user ~ '!' ~ ha_vm_control_token_name)
+      | selectattr('roleid', 'equalto', ha_vm_control_role)
+      | list | length == 0

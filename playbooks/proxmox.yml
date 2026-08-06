@@ -120,6 +120,15 @@
         - dev_vm
         - vm
 
+    # Scoped Proxmox API token that lets Home Assistant power the dev VM.
+    # Placed after dev_vm so its dev_vm_* vars are in scope.
+    - role: proxmox_root/ha_vm_control
+      tags:
+        - ha_vm_control
+        - dev
+        - dev_vm
+        - power
+
     - role: ci_runner_vm
       tags:
         - ci_runner

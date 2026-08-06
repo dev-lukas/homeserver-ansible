@@ -152,7 +152,7 @@
       layout:
         - System Metrics:
             style: row
-            columns: 5
+            columns: 6
         - Storage:
             style: row
             columns: {{ (homepage_storage_mounts | length) + 2 }}
@@ -208,6 +208,24 @@
                   - field: ue
                     label: Uncorrectable
                     format: number
+          - UPS:
+              widget:
+                type: customapi
+                url: http://localhost:3000/api/ups.json
+                refreshInterval: 30000
+                mappings:
+                  - field: power
+                    label: Power
+                  - field: load
+                    label: Load
+                    format: percent
+                  - field: charge
+                    label: Battery
+                    format: percent
+                  - field: runtime_minutes
+                    label: Runtime
+                    format: number
+                    suffix: " min"
 
       - Storage:
       {% for storage in homepage_storage_mounts %}

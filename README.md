@@ -151,3 +151,8 @@ whether a reboot is required, and whether it was rebooted — plus an
   - Installs and configures powertop with auto-tune
   - Configures LTR ignore for better Intel power states
   - Sets up cron jobs to apply settings on reboot
+- **On-demand VMs** (both run with `onboot: 0` so the host can idle deep):
+  - CI runner VM 108 is powered on/off by the GitHub-polling
+    `ci_runner_autostart` watchdog
+  - Dev VM 107 has a Home Assistant switch, backed by a Proxmox API token
+    scoped to that one VM — see [docs/dev-vm-power.md](docs/dev-vm-power.md)
