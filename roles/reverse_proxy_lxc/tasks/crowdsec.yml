@@ -1,6 +1,4 @@
 ---
-# Install and configure CrowdSec Security Engine with Nginx Bouncer
-
 - name: Install CrowdSec repository using official installer
   ansible.builtin.command:
     cmd: "pct exec {{ reverse_proxy_vmid }} -- bash -c 'curl -s https://install.crowdsec.net | sh'"

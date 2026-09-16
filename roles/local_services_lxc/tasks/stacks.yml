@@ -1,6 +1,4 @@
 ---
-# Deploy local web-app Docker Compose stacks (standalone copy for the apps LXC).
-
 - name: Deploy BentoPDF
   ansible.builtin.include_tasks: services/bentopdf.yml
 

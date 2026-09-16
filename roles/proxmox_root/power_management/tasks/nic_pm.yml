@@ -1,17 +1,6 @@
 ---
-# RTL8127 uplink NIC power management - kernel-native ASPM regime.
-#
-# History (2026-06 .. 2026-08): with the BIOS default "Native ASPM: Auto"
-# the OS had no ASPM control, r8169 probed with aspm_manageable=0 and left
-# the chip-side CLKREQ/LTR/L1.2 machinery unconfigured, the root port's
-# LTR-enable bit was 0 at boot and got spontaneously cleared ~weekly (UR
-# storms; healed by a setpci cron), and forcing L1 substates via setpci
-# hard-killed the SFP+ (ATF, rev 08) card's link. After flipping the hidden
-# BIOS option "Native ASPM" to Enabled (Setup varstore
-# EC87D643-EBA4-4BB5-A1E5-3F3E36B20DA9 offset 0x51 = 0x01 via efivarfs,
-# NVRAM backups in /root/efivar-backups-20260813/) the kernel owns ASPM:
-# it sets port LTR natively, the sysfs link/ knobs work, and nic-aspm.sh
-# replaces all the old hand-forged setpci writes (autoaspm.py, removed).
+# RTL8127 uplink NIC, kernel-native ASPM. Requires the hidden BIOS "Native ASPM"
+# = Enabled (Setup EC87D643-EBA4-4BB5-A1E5-3F3E36B20DA9 @0x51); Auto breaks it.
 
 - name: Install nic-aspm helper (kernel-native ASPM policy)
   ansible.builtin.copy:
@@ -43,10 +32,8 @@
     user: root
     state: present
 
-# The sysfs settings are kernel-tracked and survive AER-recovery restores,
-# so this guard is belt-and-suspenders, not life support (unlike the old
-# every-minute setpci heal). It also re-pins power/control and the port LTR
-# bit, and fails loudly if the BIOS ever re-takes ASPM ownership.
+# Belt-and-suspenders: the sysfs settings are kernel-tracked and survive AER
+# recovery. Re-pins power/control and fails loudly if the BIOS retakes ASPM.
 - name: Configure nic-aspm re-assert cron job
   ansible.builtin.cron:
     name: "RTL8127 NIC PM re-assert"
@@ -55,10 +42,8 @@
     user: root
     state: present
 
-# Slot-independent uplink naming: any RTL8127-family card in any slot comes
-# up as nic0 (matched by driver, not MAC/path), so card swaps and slot moves
-# need no network reconfiguration. /etc/network/interfaces (not managed
-# here) uses "bridge-ports nic0".
+# Any RTL8127-family card in any slot comes up as nic0 (matched by driver, not
+# MAC/path), so /etc/network/interfaces can hard-code "bridge-ports nic0".
 - name: Install driver-matched uplink naming rule (nic0)
   ansible.builtin.copy:
     src: 50-nic0.link
@@ -67,9 +52,8 @@
     group: root
     mode: "0644"
 
-# Per-revision driver policy enforcer: rev 05 RJ45 -> r8169, rev 08 ATF ->
-# vendor r8127 when (and only when) an r8127.ko is installed for the running
-# kernel. Inert no-op otherwise; never leaves the NIC driverless.
+# Per-revision driver policy: rev 05 RJ45 -> r8169, rev 08 ATF -> vendor r8127
+# only when an r8127.ko exists for the running kernel. Never leaves it driverless.
 - name: Install r8127-bind policy script
   ansible.builtin.copy:
     src: r8127-bind.sh
@@ -93,8 +77,7 @@
     enabled: true
     daemon_reload: "{{ r8127_bind_unit.changed }}"
 
-# Sub-second LTR storm healing (see script header). The */5 nic-aspm cron
-# remains the slow backstop.
+# Sub-second LTR storm healing; the */5 nic-aspm cron is the slow backstop.
 - name: Install AER instant-heal script
   ansible.builtin.copy:
     src: aer-ltr-heal.sh

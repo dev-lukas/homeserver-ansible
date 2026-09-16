@@ -1,6 +1,5 @@
 ---
-# Development VM role
-# Creates a Debian 13 VM with cloud-init, Docker, and development tools
+# Debian 13 VM with cloud-init, Docker and the development toolchain.
 
 # Phase 1: Create VM on Proxmox host
 - name: Download Debian cloud image if not present
@@ -33,8 +32,7 @@
       --onboot {{ dev_vm_onboot }}
   when: vm_status.rc != 0
 
-# Dev VM is started/stopped manually (only needed while developing). Enforce
-# onboot here so an already-created VM picks up the setting too.
+# Enforced here too, because qm create only applies it on first build.
 - name: Ensure dev VM onboot matches desired state
   ansible.builtin.shell: |
     cur=$(qm config {{ dev_vm_vmid }} | awk '/^onboot:/{print $2}')

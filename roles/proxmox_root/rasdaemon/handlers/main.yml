@@ -1,6 +1,4 @@
 ---
-# Rasdaemon handlers
-
 - name: Restart rasdaemon
   ansible.builtin.systemd:
     name: rasdaemon

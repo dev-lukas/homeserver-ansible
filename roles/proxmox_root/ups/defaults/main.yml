@@ -1,8 +1,5 @@
 ---
-# Default variables for UPS role
-
-# Password for upsmon connection (override in vault!)
+# Override in vault.
 ups_monitor_password: "changeme"
 
-# Battery percentage to trigger shutdown
 ups_shutdown_battery_percent: 25

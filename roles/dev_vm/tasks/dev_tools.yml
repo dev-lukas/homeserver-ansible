@@ -1,6 +1,4 @@
 ---
-# Install development tools
-
 - name: Install common development packages
   ansible.builtin.apt:
     name:

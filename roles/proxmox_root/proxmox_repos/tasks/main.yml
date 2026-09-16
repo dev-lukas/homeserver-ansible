@@ -1,6 +1,5 @@
 ---
-# Proxmox repository configuration
-# Disables enterprise repos and enables no-subscription repos
+# Swaps the enterprise repos for the no-subscription ones.
 
 - name: Remove Proxmox enterprise repository files
   ansible.builtin.file:

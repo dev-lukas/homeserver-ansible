@@ -1,8 +1,6 @@
 ---
-# Security hardening inside the registry LXC (runs over SSH, delegated).
-# Same baseline as the other Debian LXCs: SSH key-only + sysctl. Network
-# exposure is controlled by the Proxmox host firewall (proxmox_firewall.yml);
-# the registry service itself is sandboxed in its systemd unit.
+# SSH key-only + sysctl. Exposure is the host firewall's job and the service
+# itself is sandboxed in its systemd unit.
 
 - name: Disable root password login via SSH
   ansible.builtin.lineinfile:
@@ -44,8 +42,7 @@
       # Enable SYN cookies
       net.ipv4.tcp_syncookies = 1
 
-# Some net.* keys are read-only in an unprivileged container netns; apply
-# best-effort so a sandboxed key never fails the run.
+# Some net.* keys are read-only in an unprivileged netns, so apply best-effort.
 - name: Apply sysctl settings (best-effort in LXC)
   ansible.builtin.command:
     cmd: sysctl -p /etc/sysctl.d/99-security.conf

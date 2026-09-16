@@ -1,6 +1,4 @@
 ---
-# Rasdaemon - ECC memory error monitoring
-
 - name: Install rasdaemon (and sqlite3 for DB pruning)
   ansible.builtin.apt:
     name:
@@ -132,12 +130,8 @@
   when: vm_reachable.state is defined and vm_reachable.state == "started"
   changed_when: true
 
-# AER database maintenance: the recurring RTL8127 root-port LTR-clear storms
-# (see power_management/files/autoaspm.py) log 10k-1M+ aer_event rows per
-# episode and had grown ras-mc_event.db to 562 MB by 2026-08. Keep 60 days of
-# AER history; ECC (mc_event) and devlink rows are small and kept forever.
-# rasdaemon is stopped around the prune so sqlite gets exclusive access;
-# the trailing start runs regardless of the prune's outcome.
+# LTR-clear storms log 10k-1M+ aer_event rows per episode (562 MB by 2026-08),
+# so keep 60 days of AER; ECC and devlink rows are small and kept forever.
 - name: Configure monthly rasdaemon AER prune cron job
   ansible.builtin.cron:
     name: "Prune rasdaemon AER events"

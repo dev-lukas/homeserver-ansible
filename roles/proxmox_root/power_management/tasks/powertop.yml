@@ -1,6 +1,4 @@
 ---
-# Powertop installation and configuration
-
 - name: Install powertop and NIC PM dependencies
   ansible.builtin.apt:
     name:

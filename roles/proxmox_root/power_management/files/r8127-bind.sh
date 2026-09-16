@@ -1,11 +1,6 @@
 #!/bin/sh
-# Enforce per-revision driver policy for the RTL8127 NIC:
-#   rev 05 (RJ45) -> r8169        (proven stable with ASPM L1.2 -> C10)
-#   rev 08 (ATF)  -> vendor r8127 (only if r8127.ko is installed)
-# Live unbind/rebind switch validated 2026-08-12. Degrades gracefully: if
-# the target driver is unavailable (e.g. r8127.ko missing after a kernel
-# upgrade) the current driver stays bound -> link up, never offline.
-# Inert no-op while no vendor module is installed.
+# Per-revision driver policy: rev 05 (RJ45) -> r8169, rev 08 (ATF) -> vendor
+# r8127. If the target driver is missing the current one stays bound, never offline.
 set -u
 NIC=$(lspci -Dn 2>/dev/null | awk "/10ec:8127/{print \$1; exit}")
 [ -n "$NIC" ] || exit 0

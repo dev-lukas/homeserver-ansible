@@ -1,6 +1,4 @@
 ---
-# Configure unattended-upgrades for automatic security patches
-
 - name: Install unattended-upgrades
   ansible.builtin.apt:
     name:

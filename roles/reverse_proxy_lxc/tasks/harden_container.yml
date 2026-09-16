@@ -1,6 +1,4 @@
 ---
-# Security hardening for Reverse Proxy LXC container (Debian 12)
-
 - name: Install OpenSSH server
   ansible.builtin.command:
     cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get install -y openssh-server"

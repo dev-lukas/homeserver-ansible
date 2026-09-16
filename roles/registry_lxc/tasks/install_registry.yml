@@ -1,7 +1,4 @@
 ---
-# Install the distribution registry as a hardened systemd service.
-# Runs inside the LXC (delegated over SSH).
-
 - name: Create registry system user
   ansible.builtin.user:
     name: "{{ registry_lxc_user }}"
@@ -55,8 +52,7 @@
     group: "{{ registry_lxc_user }}"
     mode: "0750"
 
-# Self-signed cert for the proxy->registry hop only. nginx uses
-# proxy_ssl_verify off for this backend; clients never see this cert.
+# Proxy->registry hop only; nginx sets proxy_ssl_verify off, clients never see it.
 - name: Generate self-signed TLS certificate
   ansible.builtin.command:
     cmd: >

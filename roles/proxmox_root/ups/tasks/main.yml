@@ -86,8 +86,7 @@
     - nut-server
     - nut-monitor
 
-# UPS stats for Homepage dashboard. Pushed over SSH like the ECC stats;
-# root's key is authorized on the apps LXC by the rasdaemon role.
+# Pushed over SSH like the ECC stats; the rasdaemon role authorizes root's key.
 - name: Check if local-services LXC is reachable
   ansible.builtin.wait_for:
     host: "{{ apps_lxc_ip }}"

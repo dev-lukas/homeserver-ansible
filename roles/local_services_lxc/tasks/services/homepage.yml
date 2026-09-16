@@ -225,7 +225,7 @@
                   - field: runtime_minutes
                     label: Runtime
                     format: number
-                    suffix: " min"
+                    suffix: "min"
 
       - Storage:
       {% for storage in homepage_storage_mounts %}
@@ -314,6 +314,64 @@
               icon: mdi-server
               href: https://proxmox.{{ reverse_proxy_domain }}
               description: Virtualization platform
+    mode: "0644"
+
+- name: Deploy Homepage custom.css
+  ansible.builtin.copy:
+    dest: "{{ local_services_stacks_dir }}/homepage/config/custom.css"
+    content: |
+      /* The System Metrics row mixes glances widgets (CPU, Memory, Disk I/O,
+         CPU Temperature) with customapi widgets (ECC Memory, UPS). A glances
+         widget pins its body to a 68px chart container and draws its stats as
+         bottom-aligned 12px text; a customapi widget draws centred, boxed
+         "blocks" that size themselves to their content, so out of the box the
+         two sit at different heights with different typography.
+
+         Restyle the two customapi widgets onto the glances geometry so the row
+         reads as one set of tiles. Scoped by data-name (Homepage puts the
+         service name on the <li>) so any other widget that renders blocks keeps
+         the stock look. */
+
+      li.service[data-name="ECC Memory"] .service-container,
+      li.service[data-name="UPS"] .service-container {
+        height: 68px; /* == the h-[68px] of a glances chart container */
+        align-items: flex-end;
+      }
+
+      li.service[data-name="ECC Memory"] .service-block,
+      li.service[data-name="UPS"] .service-block {
+        margin: 0;
+        padding: 0 0.25rem 0.75rem; /* 0.75rem == the bottom-3 of glances stats */
+        background: transparent;
+        justify-content: flex-end;
+        align-items: flex-start;
+        text-align: left;
+        min-width: 0; /* shrink long labels instead of overflowing the card */
+        overflow: hidden;
+      }
+
+      li.service[data-name="ECC Memory"] .service-block:first-child,
+      li.service[data-name="UPS"] .service-block:first-child {
+        padding-left: 0.75rem; /* == the left-3 of glances stats */
+      }
+
+      /* Value line: matches the bold 12px summary value of a glances widget. */
+      li.service[data-name="ECC Memory"] .service-block > div:first-child,
+      li.service[data-name="UPS"] .service-block > div:first-child {
+        font-size: 0.75rem;
+        line-height: 1rem;
+        font-weight: 700;
+      }
+
+      /* Label line: matches the dimmed 12px stat labels of a glances widget. */
+      li.service[data-name="ECC Memory"] .service-block > div:last-child,
+      li.service[data-name="UPS"] .service-block > div:last-child {
+        font-size: 0.75rem;
+        line-height: 1rem;
+        font-weight: 400;
+        text-transform: none;
+        opacity: 0.5;
+      }
     mode: "0644"
 
 - name: Deploy Homepage bookmarks.yaml

@@ -1,6 +1,4 @@
 ---
-# Handlers for ci_runner_vm role
-
 - name: Restart Docker
   ansible.builtin.systemd:
     name: docker

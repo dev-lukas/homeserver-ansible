@@ -1,6 +1,5 @@
 ---
-# Home Assistant OS VM role
-# Creates a hardened Home Assistant OS VM on Proxmox
+# Creates a hardened Home Assistant OS VM on Proxmox.
 
 - name: Check if Home Assistant VM already exists
   ansible.builtin.command:

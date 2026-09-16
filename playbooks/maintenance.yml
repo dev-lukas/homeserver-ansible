@@ -1,14 +1,6 @@
 ---
-# Maintenance playbook - Updates all infrastructure components
-# Usage: ansible-playbook playbooks/maintenance.yml --ask-vault-pass
-# Or target a single guest via its play tag, e.g.:
-#   ansible-playbook playbooks/maintenance.yml --ask-vault-pass --tags immich
-#
-# Covered guests: Proxmox host, AdGuard LXC (100), Reverse Proxy LXC (103),
-# Registry LXC (106), Apps LXC (102: Immich + local services), Jellyfin LXC
-# (105), Media Services LXC, Dev VM, CI Runner VM (108, woken on demand).
-# NOT covered on purpose: Home Assistant VM - HAOS is an appliance that
-# manages its own OS/core updates through Home Assistant itself.
+# Updates every guest except the Home Assistant VM, which manages its own.
+# Target one guest via its play tag, e.g. --tags immich.
 
 - name: Maintenance - Proxmox Host
   hosts: proxmox-root
@@ -128,8 +120,7 @@
   tags: [adguard, maintenance]
   vars:
     adguard_vmid: "{{ hostvars['proxmox-root']['adguard_vmid'] | default(100) }}"
-    # `pct exec` can wedge after the inner command finishes and the command
-    # module has no timeout, so cap it: otherwise one hang blocks the run.
+    # `pct exec` can wedge after the inner command exits and has no module timeout.
     adguard_apk_timeout: 900
     adguard_binary_timeout: 300
   tasks:
@@ -203,8 +194,7 @@
       when: nginx_test.rc == 0
       changed_when: false
 
-    # Report-only: never auto-reboot the proxy (it fronts every service);
-    # the summary flags it so the reboot can be done at a convenient time.
+    # Report-only: never auto-reboot the proxy, it fronts every service.
     - name: Check if reboot is required
       ansible.builtin.command:
         cmd: "pct exec {{ reverse_proxy_vmid }} -- test -f /var/run/reboot-required"
@@ -230,8 +220,7 @@
     registry_vmid: "{{ hostvars['proxmox-root']['registry_lxc_vmid'] | default(106) }}"
     registry_port: "{{ hostvars['proxmox-root']['registry_lxc_port'] | default(5000) }}"
   tasks:
-    # The registry LXC only exists after the CI-VM -> LXC 106 cutover
-    # (docs/registry.md); skip cleanly until it is live.
+    # The registry LXC only exists after the LXC-106 cutover; skip until it is live.
     - name: Check registry LXC status
       ansible.builtin.command:
         cmd: "pct status {{ registry_vmid }}"
@@ -247,8 +236,7 @@
     - name: Maintain registry LXC
       when: "'running' in registry_status.stdout"
       block:
-        # OS packages only. The registry binary itself is pinned + checksummed
-        # (registry_lxc_version); bump it via proxmox.yml --tags registry.
+        # OS packages only; the registry binary is pinned (bump via --tags registry).
         - name: Upgrade packages (lock-aware, self-healing, retried)
           ansible.builtin.shell:
             cmd: "pct exec {{ registry_vmid }} -- bash -s"
@@ -301,8 +289,7 @@
   vars:
     jellyfin_vmid: "{{ hostvars['proxmox-root']['jellyfin_vmid'] | default(105) }}"
   tasks:
-    # Jellyfin is installed from its apt repo inside the LXC, so the regular
-    # apt upgrade also updates Jellyfin itself.
+    # Jellyfin comes from its own apt repo, so this upgrade updates Jellyfin too.
     - name: Upgrade packages (lock-aware, self-healing, retried)
       ansible.builtin.shell:
         cmd: "pct exec {{ jellyfin_vmid }} -- bash -s"
@@ -340,9 +327,7 @@
           reboot_required: "{{ jellyfin_reboot.rc == 0 }}"
           rebooted: false
 
-# One play for the combined apps LXC (102): the former "Local Services VM"
-# and "Immich VM" plays both targeted this same guest, running the apt
-# maintenance (and a possible reboot) twice per run.
+# One play for the combined apps LXC (102); the former split plays maintained it twice.
 - name: Maintenance - Apps LXC (Immich + local services)
   hosts: proxmox-root
   gather_facts: false
@@ -353,8 +338,7 @@
     ssh_key_path: "/tmp/.ansible_deploy_key"
     ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ssh_key_path }}"
     immich_web_port: 2283
-    # Immich uses the floating `release` tag (immich_version), so pull+up
-    # performs the app update; the pinned postgres image is not touched.
+    # Immich rides the floating `release` tag, so pull+up is the app update.
     apps_stacks:
       - immich
       - bentopdf
@@ -385,8 +369,7 @@
       register: stack_updates
       changed_when: false
 
-    # Immich runs DB migrations on version jumps; give it time to come up
-    # before declaring the run healthy.
+    # Immich runs DB migrations on version jumps, so allow a long wait.
     - name: Wait for Immich to answer after update
       ansible.builtin.shell:
         cmd: "ssh {{ ssh_opts }} root@{{ apps_ip }} 'curl -fsS -o /dev/null http://127.0.0.1:{{ immich_web_port }}/api/server/ping'"
@@ -593,8 +576,7 @@
       no_log: true
 
   tasks:
-    # The CI VM is on-demand (onboot 0, watchdog-managed): wake it for
-    # maintenance and shut it down again afterwards if we started it.
+    # The CI VM is on-demand (onboot 0); shut it down again if we started it.
     - name: Check CI runner VM status
       ansible.builtin.command:
         cmd: "qm status {{ ci_runner_vmid }}"
@@ -622,8 +604,7 @@
         # Set to false if you want to avoid interrupting in-flight CI jobs.
         maint_auto_reboot: true
 
-    # Legacy docker registry on the CI VM; gone after the LXC-106 cutover
-    # (docs/registry.md), so skip when the stack directory no longer exists.
+    # Legacy registry on the CI VM, gone post-cutover; skip when its stack dir is absent.
     - name: Update legacy registry container (pre-cutover only)
       ansible.builtin.shell:
         cmd: >-

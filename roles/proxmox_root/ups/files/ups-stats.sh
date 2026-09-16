@@ -1,10 +1,8 @@
 #!/bin/bash
-# UPS Statistics Script
-# Reads NUT (upsc) data and outputs JSON for the Homepage dashboard
+# Reads NUT (upsc) data and pushes it to the Homepage API as JSON.
 
 set -e
 
-# Configuration
 REMOTE_HOST="${1:-192.168.178.15}"
 REMOTE_PATH="${2:-/opt/stacks/homepage/api/ups.json}"
 UPS_NAME="${3:-eaton}"
@@ -27,22 +25,19 @@ is_num "$load" || load=0
 is_num "$charge" || charge=0
 is_num "$runtime" || runtime=0
 
-# Map NUT status flags (OL/OB/LB...) to a human-readable power source
+# Keep these short: the Homepage widget puts four values in one column, so past
+# ~8 characters they wrap. LB outranks OL/OB because it matters most.
 case "$status" in
-    *OB*) power="On Battery" ;;
-    *OL*) power="On Wall" ;;
-    *) power="${status:-Unavailable}" ;;
+    *LB*) power="Batt Low" ;;
+    *OB*) power="Battery" ;;
+    *OL*) power="Wall" ;;
+    *) power="${status:-N/A}" ;;
 esac
-if [[ "$status" == *LB* ]]; then
-    power="${power} (Low)"
-fi
 
 runtime_minutes=$(( ${runtime%%.*} / 60 ))
 
-# Get timestamp
 timestamp=$(date -Iseconds)
 
-# Create JSON
 json=$(cat <<EOF
 {
   "power": "${power}",
@@ -55,7 +50,6 @@ json=$(cat <<EOF
 EOF
 )
 
-# Write to remote host via SSH
 echo "$json" | ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o BatchMode=yes "root@${REMOTE_HOST}" "cat > ${REMOTE_PATH}"
 
 # Also output locally for debugging
