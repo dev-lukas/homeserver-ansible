@@ -14,6 +14,14 @@
     - powertop
     - power
 
+- name: Include RTL8127 NIC power management (kernel-native ASPM regime)
+  ansible.builtin.include_tasks: nic_pm.yml
+  when: nic_pm_enabled | default(true)
+  tags:
+    - nic
+    - aspm
+    - power
+
 - name: Include LTR ignore configuration
   ansible.builtin.include_tasks: ltr_ignore.yml
   when: ltr_ignore_enabled | default(false)

@@ -6,5 +6,8 @@ internal_subnet: "192.168.178.0/24"
 
 # Power management settings
 powertop_auto_tune: true
-autoaspm_enabled: true
+# Kernel-native NIC ASPM regime (replaced autoaspm_enabled / setpci era).
+# Requires BIOS "Native ASPM" = Enabled (hidden Setup option, see
+# roles/proxmox_root/power_management/tasks/nic_pm.yml header).
+nic_pm_enabled: true
 ltr_ignore_enabled: true
