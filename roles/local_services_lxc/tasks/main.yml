@@ -1,10 +1,5 @@
 ---
-# Combined "apps" LXC: Immich + local web services.
 # Unprivileged Docker-in-LXC with a direct ZFS bind mount for the photo library.
-# Self-contained: it carries its own copies of the immich/local-services compose
-# task files, so immich_vm and local_services_vm can be deleted after migration.
-
-# --- Host prerequisites ---
 
 - name: Ensure fuse module is loaded on the host (needed for fuse-overlayfs)
   community.general.modprobe:
@@ -32,9 +27,8 @@
     owner: "{{ apps_lxc_library_owner }}"
     group: "{{ apps_lxc_library_owner }}"
     mode: "0755"
-  # NOTE: migrating an EXISTING library also needs a one-time recursive chown to
-  # apps_lxc_library_owner (the existing photos are currently root-owned). That is
-  # handled as a deliberate migration step, not on every run.
+  # Migrating an existing library also needs a one-time recursive chown to
+  # apps_lxc_library_owner; that is a deliberate step, not done on every run.
 
 # --- Create the container ---
 
@@ -127,8 +121,7 @@
     seconds: 10
   when: apps_start_result.changed
 
-# The host's root key must survive this push: the rasdaemon/ups stats crons
-# on the Proxmox host use it to publish JSON into the Homepage api directory.
+# The host's root key must survive this push; the stats crons publish JSON with it.
 - name: Read Proxmox root public key (stats push)
   ansible.builtin.slurp:
     src: /root/.ssh/id_rsa.pub
@@ -145,8 +138,7 @@
       {% endif %}{% endfor %}
   no_log: true
 
-# pct exec/push occasionally die with rc 129 (SIGHUP) on a healthy
-# container; both are idempotent, so retry instead of failing the play.
+# pct exec/push sometimes die with rc 129 on a healthy container; both are idempotent.
 - name: Ensure /root/.ssh exists in container
   ansible.builtin.command:
     cmd: "pct exec {{ apps_lxc_vmid }} -- install -d -m 700 /root/.ssh"
@@ -194,8 +186,6 @@
     groups: apps_lxc_target
 
 # --- Configure the container (over SSH, delegated) ---
-# Self-contained: all compose task files live in this role, so immich_vm and
-# local_services_vm can be deleted once the migration is complete.
 
 - name: Configure the apps LXC
   block:

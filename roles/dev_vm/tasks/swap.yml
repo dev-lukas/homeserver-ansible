@@ -1,6 +1,4 @@
 ---
-# Configure swap file
-
 - name: Check if swap file exists
   ansible.builtin.stat:
     path: /swapfile

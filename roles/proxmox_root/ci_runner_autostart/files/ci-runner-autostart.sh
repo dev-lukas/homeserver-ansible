@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
-#
-# CI Runner autostart watchdog.
-# Config is sourced from EnvironmentFile (/etc/ci-runner-autostart.env):
-#   GH_PAT, GH_USER, REPOS (space-separated), VMID, IDLE_MINUTES, STATE_DIR
-#
-# Powers the CI runner VM on when GitHub has queued/in-progress jobs and shuts it
-# down after it has been idle for IDLE_MINUTES. Logs to the journal via logger.
+# Powers the CI runner VM on when GitHub has queued jobs and off after
+# IDLE_MINUTES idle. Config comes from /etc/ci-runner-autostart.env.
 set -euo pipefail
 
 : "${GH_PAT:?}" "${GH_USER:?}" "${REPOS:?}" "${VMID:?}" "${IDLE_MINUTES:?}" "${STATE_DIR:?}"
@@ -20,8 +15,7 @@ log() { logger -t ci-runner-autostart "$*"; }
 active=0
 for repo in $REPOS; do
   for st in queued in_progress; do
-    # -L: a renamed repo answers 301; without following it the watchdog
-    # silently sees zero runs and never wakes the VM (bit us 2026-07-10).
+    # -L: a renamed repo answers 301, and without it we silently see zero runs.
     cnt=$(curl -fsSL \
       -H "Authorization: Bearer $GH_PAT" \
       -H "Accept: application/vnd.github+json" \
@@ -42,8 +36,7 @@ if [ "$active" -gt 0 ]; then
   fi
 else
   if [ "$vmstatus" = "running" ]; then
-    # Initialise the timer on first sight (e.g. VM started manually) so we never
-    # shut a freshly-started runner down on the very next tick.
+    # Initialise on first sight so a manually started VM survives the next tick.
     [ -f "$STATE_FILE" ] || echo "$now" > "$STATE_FILE"
     last=$(cat "$STATE_FILE" 2>/dev/null || echo "$now")
     idle_min=$(( (now - last) / 60 ))

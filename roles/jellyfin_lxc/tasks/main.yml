@@ -1,6 +1,5 @@
 ---
-# Jellyfin LXC role
-# Creates a Debian 13 LXC container with iGPU passthrough for hardware transcoding
+# Debian 13 LXC with iGPU passthrough for hardware transcoding.
 
 - name: Download Debian 13 LXC template if not present
   ansible.builtin.command:
@@ -41,15 +40,14 @@
       --start 0
   when: container_status.rc != 0
 
-# Configure iGPU passthrough in LXC config (Proxmox 8.2+ dev0 syntax)
-# Get the render group GID from the host first
+# iGPU passthrough needs the host's render GID first.
 - name: Get render group GID from host
   ansible.builtin.shell: "getent group render | cut -d: -f3"
   register: host_render_gid
   changed_when: false
   when: jellyfin_igpu_passthrough
 
-# Enable nesting (required for GPU passthrough)
+# Required for GPU passthrough.
 - name: Enable nesting on LXC
   ansible.builtin.lineinfile:
     path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
@@ -58,9 +56,7 @@
     insertafter: "^arch:"
   when: jellyfin_igpu_passthrough
 
-# Use Proxmox 8.2+ dev0 device passthrough syntax
-# uid=0 for root (Jellyfin runs as jellyfin but needs root-accessible device)
-# gid=render group for proper permissions
+# Proxmox 8.2+ dev0 syntax; uid=0 because the device must be root-accessible.
 - name: Configure GPU device passthrough (Proxmox 8.2+ syntax)
   ansible.builtin.lineinfile:
     path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
@@ -69,7 +65,7 @@
     insertafter: EOF
   when: jellyfin_igpu_passthrough and host_render_gid.stdout | length > 0
 
-# Also add card0 for some applications that need it
+# card0 as well: some applications need it.
 - name: Configure GPU card0 device passthrough
   ansible.builtin.lineinfile:
     path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
@@ -78,7 +74,7 @@
     insertafter: EOF
   when: jellyfin_igpu_passthrough and host_render_gid.stdout | length > 0
 
-# Remove old lxc.mount.entry GPU passthrough (replaced by dev0/dev1)
+# Replaced by dev0/dev1.
 - name: Remove old lxc.mount.entry GPU passthrough block
   ansible.builtin.blockinfile:
     path: "/etc/pve/lxc/{{ jellyfin_vmid }}.conf"
@@ -86,8 +82,7 @@
     state: absent
   when: jellyfin_igpu_passthrough
 
-# Configure UID/GID mapping to allow access to media files owned by 1000:1000
-# This maps container UID 1000 to host UID 1000 (bypassing the unprivileged offset)
+# Map container UID 1000 straight to host 1000 so media owned by 1000 is readable.
 - name: Configure subuid for root user (allow mapping UID 1000)
   ansible.builtin.lineinfile:
     path: /etc/subuid

@@ -1,6 +1,4 @@
 ---
-# Security hardening for CI Runner VM (Debian)
-
 - name: Disable root password login via SSH
   ansible.builtin.lineinfile:
     path: /etc/ssh/sshd_config

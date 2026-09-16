@@ -1,6 +1,5 @@
-# Radarr Configarr Configuration
-# All German + English profiles with customizations
-# NOTE: quality_profiles are defined in templates - we only add custom_formats
+# German + English profiles. Quality profiles come from the templates; this file
+# only adds custom formats.
 
 instance1:
   base_url: http://{{ media_services_ip }}:7878
@@ -45,9 +44,7 @@ instance1:
 
   # Custom format assignments (templates handle quality_profiles)
   custom_formats:
-    #==========================================================================
     # BAD RELEASE GROUPS - Block for ALL profiles
-    #==========================================================================
     - trash_ids:
         - b6832f586342ef70d9c128d40c07b872 # Bad Dual Groups
         - ae9b7c9ebde1f3bd336a8cbd1ec4c5e5 # No-RlsGroup
@@ -60,9 +57,7 @@ instance1:
         - name: UHD Bluray + WEB (GER)
         - name: Remux + WEB 2160p (GER)
 
-    #==========================================================================
     # HDR / DV - Block DV without HDR fallback (all UHD/Remux)
-    #==========================================================================
     - trash_ids:
         - 923b6abef9b17f937fab56cfcf89e1f1 # DV (w/o HDR fallback)
       assign_scores_to:
@@ -70,27 +65,21 @@ instance1:
         - name: UHD Bluray + WEB (GER)
         - name: Remux + WEB 2160p (GER)
 
-    #==========================================================================
     # x265 - Allow for UHD and Remux profiles
-    #==========================================================================
     - trash_ids:
         - 839bea857ed2c0a8e084f3cbdbd65ecb # x265 (HD) - allows HDR/DV x265
       assign_scores_to:
         - name: UHD Bluray + WEB (GER)
         - name: Remux + WEB 2160p (GER)
 
-    #==========================================================================
     # 4K REMASTER - Prefer for UHD profiles
-    #==========================================================================
     - trash_ids:
         - eca37840c13c6ef2dd0262b141a5482f # 4K Remaster
       assign_scores_to:
         - name: UHD Bluray + WEB (GER)
         - name: Remux + WEB 2160p (GER)
 
-    #==========================================================================
     # IMAX ENHANCED - Prefer for HD/WEB-DL profiles
-    #==========================================================================
     - trash_ids:
         - 9f6cbff8cfe4ebbc1bde14c7b7bec0de # IMAX Enhanced
         - eecf3a857724171f968a66cb5719e152 # IMAX
@@ -100,9 +89,7 @@ instance1:
         - name: UHD Bluray + WEB (GER)
         - name: Remux + WEB 2160p (GER)
 
-    #==========================================================================
     # SPECIAL EDITION - Apply to all cloned Special Edition profiles
-    #==========================================================================
     - trash_ids:
         - 957d0f44b592285f26449575e8b1167e # Special Edition
       assign_scores_to:

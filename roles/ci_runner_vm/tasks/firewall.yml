@@ -1,6 +1,4 @@
 ---
-# Install and configure UFW firewall
-
 - name: Install UFW
   ansible.builtin.apt:
     name: ufw

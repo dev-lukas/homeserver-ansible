@@ -11,9 +11,7 @@ log_level_in: nolog
 log_level_out: nolog
 
 [RULES]
-# ============================================
 # INBOUND RULES - Restrictive by default
-# ============================================
 
 # Home Assistant Web Interface (required)
 IN ACCEPT -p tcp -dport {{ haos_web_port }} -log nolog
@@ -59,9 +57,7 @@ IN ACCEPT -p tcp -dport {{ haos_zwave_js_port }} -log nolog
 # Drop and log all other inbound traffic
 IN DROP -log warning
 
-# ============================================
 # OUTBOUND RULES - More permissive for integrations
-# ============================================
 
 # Allow all outbound (needed for cloud integrations, updates, etc.)
 OUT ACCEPT -log nolog

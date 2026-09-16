@@ -1,6 +1,5 @@
 ---
-# Reverse Proxy verification playbook
-# Usage: ansible-playbook playbooks/reverse_proxy_verify.yml --ask-vault-pass
+# Reverse proxy verification; run standalone with --ask-vault-pass.
 
 - name: Verify Reverse Proxy and safety mechanisms
   hosts: proxmox-root

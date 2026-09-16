@@ -1,6 +1,4 @@
 ---
-# Clone project repositories
-
 - name: Create workspace directory
   ansible.builtin.file:
     path: "{{ dev_vm_workspace_dir }}"

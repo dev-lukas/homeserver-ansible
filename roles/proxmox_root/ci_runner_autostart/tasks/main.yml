@@ -1,7 +1,4 @@
 ---
-# CI Runner autostart watchdog: a host-side systemd timer that powers the runner
-# VM on when GitHub jobs queue and shuts it down when idle.
-
 - name: Install jq (used by the watchdog to parse the GitHub API)
   ansible.builtin.apt:
     name: jq

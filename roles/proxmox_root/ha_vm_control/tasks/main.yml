@@ -1,8 +1,6 @@
 ---
-# Creates the scoped Proxmox API token Home Assistant uses to power the dev VM.
-#
-# All four objects (role, user, ACL, token) are checked before being created, so
-# the play is idempotent and re-running it never rotates a live token.
+# Role, user, ACL and token are each checked before creation, so re-running
+# never rotates a live token.
 
 - name: Read existing PVE roles
   ansible.builtin.command:
@@ -59,8 +57,7 @@
   when: ha_vm_control_token_name not in (ha_vm_control_existing_tokens.stdout | from_json | map(attribute='tokenid') | list)
   no_log: true
 
-# Proxmox reveals a token's secret exactly once, at creation. If this is missed
-# the only recovery is deleting the token and creating a new one.
+# Proxmox reveals the secret only at creation; missing it means recreating the token.
 - name: Show the new token secret (shown ONCE - copy it into HA secrets.yaml now)
   ansible.builtin.debug:
     msg: |
@@ -79,8 +76,7 @@
   register: ha_vm_control_existing_acls
   changed_when: false
 
-# With privsep the token has no rights of its own until it is granted them, so
-# both the user and the token are given the role on /vms/<vmid> only.
+# With privsep the token has no rights until granted, so both get the role.
 - name: Grant the user power rights on VM {{ ha_vm_control_vmid }} only
   ansible.builtin.command:
     cmd: >-

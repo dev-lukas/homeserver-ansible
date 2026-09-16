@@ -1,8 +1,6 @@
 ---
-# Retention + garbage collection, ported from the old ci_runner_vm registry:
-# same policy (keep latest/non-SHA tags + newest N SHA tags), but the GC step
-# stops the systemd service and runs the binary's garbage-collect directly
-# instead of juggling docker containers.
+# Keeps non-SHA tags plus the newest N SHA tags, then stops the service and runs
+# the binary's garbage-collect directly.
 
 - name: Deploy retention credentials for the local script
   ansible.builtin.copy:

@@ -1,6 +1,4 @@
 ---
-# Configure Proxmox firewall for Reverse Proxy LXC container
-
 # Enable firewall at datacenter level using API
 - name: Enable datacenter firewall
   ansible.builtin.command:
@@ -38,8 +36,7 @@
       # Allow ICMP (ping) from internal network
       IN ACCEPT -p icmp -source {{ reverse_proxy_internal_subnet }}
 
-      # Note: Proxmox firewall has built-in connection tracking
-      # Drop everything else (implicit due to policy_in: DROP)
+      # Everything else is dropped implicitly by policy_in: DROP.
       FWEOF
   notify: Reload pve-firewall
 

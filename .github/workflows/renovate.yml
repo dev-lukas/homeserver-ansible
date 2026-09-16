@@ -1,8 +1,7 @@
 name: Renovate
 
-# Self-hosted Renovate with zero always-on footprint: GitHub's cron queues
-# the job, the ci-runner autostart watchdog wakes VM 108, Renovate runs in
-# docker on the runner, and the watchdog shuts the VM down again when idle.
+# Zero always-on footprint: GitHub's cron queues the job, the autostart watchdog
+# wakes the CI VM, Renovate runs there, and the watchdog powers it back down.
 
 on:
   schedule:
@@ -31,10 +30,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
 
-      # Renovate is limited to PUBLIC repositories: the list is resolved fresh
-      # on every run (this API endpoint only ever returns public repos, even
-      # when authenticated as the owner), so visibility changes and new public
-      # repos are picked up automatically without touching this file.
+      # Public repos only: this endpoint never returns private ones, and resolving
+      # it per run picks up new and newly-public repos without editing this file.
       - name: Resolve public repositories
         id: public_repos
         env:

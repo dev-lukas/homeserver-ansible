@@ -1,7 +1,5 @@
 ---
-# Deploy Immich Docker Compose stack (standalone copy for the apps LXC).
-# Library lives on the bind-mounted ZFS dir ({{ immich_nfs_mount }}); the
-# container runs Immich as default root -> host 100000 via idmap.
+# Library lives on the bind-mounted ZFS dir; Immich runs as root -> host 100000.
 
 - name: Validate Immich database password is configured
   ansible.builtin.assert:
@@ -100,9 +98,8 @@
       volumes:
         model-cache:
 
-# --- One-shot DB restore (cutover only; apps_lxc_immich_restore=true) ---
-# Brings up only the database, restores Immich's own backup with the OFFICIAL
-# procedure, then the main "Start Immich stack" task starts immich-server/ML.
+# --- One-shot DB restore (cutover only) ---
+# Brings up only the database and restores; the main task then starts the server.
 
 - name: Start only the database for restore
   ansible.builtin.command:

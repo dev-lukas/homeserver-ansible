@@ -1,11 +1,6 @@
 ---
-# Always-on container registry LXC (VMID 106).
-# The registry serves HTTPS + htpasswd on :5000, reachable only from the
-# reverse proxy; the public endpoint stays https://registry.lukas-roth.dev.
-# Data lives on the big array: mediapool/registry (bind-mounted).
-#
-# Defaults live in roles/registry_lxc/defaults/main.yml — override here.
-
+# Registry LXC: HTTPS + htpasswd on :5000, reachable only from the reverse proxy
+# at https://registry.lukas-roth.dev. Data bind-mounted from mediapool/registry.
 registry_lxc_vmid: 106
 registry_lxc_ip: "192.168.178.14"
 

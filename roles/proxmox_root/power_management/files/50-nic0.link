@@ -1,6 +1,5 @@
-# Stable uplink name for the RTL8127 card regardless of slot or variant.
-# Matches by driver so it works for the RJ45 (r8169) and ATF (vendor r8127)
-# in any PCIe slot. /etc/network/interfaces uses bridge-ports nic0.
+# Stable uplink name regardless of slot or card variant; matched by driver so it
+# covers RJ45 (r8169) and ATF (r8127). /etc/network/interfaces uses nic0.
 [Match]
 Driver=r8169 r8127
 Type=ether

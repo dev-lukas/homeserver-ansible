@@ -1,6 +1,4 @@
 ---
-# Handlers for Home Assistant OS VM role
-
 - name: Restart Home Assistant VM
   ansible.builtin.command:
     cmd: "qm reboot {{ haos_vmid }}"

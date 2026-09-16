@@ -1,9 +1,5 @@
 ---
-# VM-level hardening for Home Assistant OS
-# These settings enhance security at the Proxmox VM layer
-
-# Note: Home Assistant OS is a managed appliance OS with its own security
-# measures. These settings focus on Proxmox-level hardening.
+# Proxmox-layer hardening only; HAOS is an appliance that secures its own guest.
 
 - name: Disable VNC access (use Proxmox console instead)
   ansible.builtin.command:

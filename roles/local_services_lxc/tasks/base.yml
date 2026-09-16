@@ -1,6 +1,4 @@
 ---
-# Base package setup inside the apps LXC (runs over SSH, delegated).
-
 - name: Update apt cache
   ansible.builtin.apt:
     update_cache: true
@@ -20,8 +18,7 @@
       - locales
     state: present
 
-# The stock LXC template has no generated locale, which makes apt/perl emit
-# noisy "Setting locale failed" warnings. Generate one.
+# The stock template has no generated locale, so apt/perl warn on every run.
 - name: Generate en_US.UTF-8 locale
   community.general.locale_gen:
     name: en_US.UTF-8

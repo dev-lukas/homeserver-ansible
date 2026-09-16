@@ -1,5 +1,4 @@
 ---
-# Security hardening for AdGuard LXC container (Alpine)
 
 - name: Install OpenSSH server
   ansible.builtin.command:

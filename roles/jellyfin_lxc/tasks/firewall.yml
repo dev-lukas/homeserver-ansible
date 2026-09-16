@@ -1,5 +1,4 @@
 ---
-# Configure Proxmox firewall for Jellyfin LXC
 
 # Enable firewall at datacenter level using API
 - name: Enable datacenter firewall

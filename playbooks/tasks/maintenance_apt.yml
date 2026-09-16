@@ -1,16 +1,6 @@
 ---
-# Hardened apt maintenance for a Debian guest reached over SSH through the
-# Proxmox jump host. Reused by every guest VM play so the upgrade hardening,
-# retries and reboot handling live in exactly one place.
-#
-# Required vars (passed by the caller via include_tasks `vars:`):
-#   maint_label : human-readable host name, used in task names and the summary
-#   maint_ip    : IP address of the target VM
-#   ssh_opts    : SSH option string (defined per play)
-# Optional vars:
-#   maint_auto_reboot : reboot the VM when an update requires it (default: true)
-#
-# Relies on the global `apt_maintenance_script` (inventory/group_vars/all.yml).
+# Shared apt upgrade + reboot handling for a guest reached over SSH.
+# Caller passes maint_label, maint_ip, ssh_opts and optionally maint_auto_reboot.
 
 - name: "Upgrade packages (lock-aware, self-healing, retried) on {{ maint_label }}"
   ansible.builtin.shell:
@@ -30,10 +20,8 @@
   register: maint_reboot
   changed_when: false
 
-# Capture the kernel boot id *before* rebooting. It changes on every boot, so
-# comparing against it afterwards proves the box actually went down and came
-# back up — without this, the wait below can connect to the not-yet-rebooted
-# system, see it "running", and let later tasks race the real reboot.
+# The boot id changes on every boot, so comparing it proves the box really went
+# down; without it the wait can see the not-yet-rebooted system as "running".
 - name: "Capture boot id before reboot on {{ maint_label }}"
   ansible.builtin.shell:
     cmd: "ssh {{ ssh_opts }} root@{{ maint_ip }} 'cat /proc/sys/kernel/random/boot_id'"
@@ -75,7 +63,6 @@
       ssh {{ ssh_opts }} -o ConnectTimeout=5 root@{{ maint_ip }}
       'systemctl is-system-running --wait'
   register: maint_boot
-  # is-system-running returns non-zero while booting; 'running' = 0, while
   # 'degraded' is non-zero but still means boot completed, so accept it too.
   until: maint_boot.rc == 0 or ('degraded' in maint_boot.stdout)
   retries: 30

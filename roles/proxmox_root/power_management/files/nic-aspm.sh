@@ -1,19 +1,6 @@
 #!/bin/sh
-# Kernel-native ASPM/PM policy for the RTL8127 uplink NIC.
-#
-# PREREQUISITE (BIOS): hidden Setup option "Native ASPM" = Enabled
-# (Setup varstore EC87D643-EBA4-4BB5-A1E5-3F3E36B20DA9, offset 0x51 = 0x01;
-# written via efivarfs 2026-08-14; byte-exact NVRAM backups on the host in
-# /root/efivar-backups-20260813/ and off-host in the operator's projects
-# folder). With OS-controlled ASPM the kernel sets root-port LTR natively at
-# enumeration, exposes writable /sys/.../link/ ASPM knobs, and r8169 probes
-# with aspm_manageable=1, so it configures the chip-side CLKREQ/LTR/L1.2
-# machinery in-tree. This script replaced the old setpci-based autoaspm.py
-# (see git history): hand-forged register writes are unnecessary and would
-# fight the kernel under this regime.
-#
-# If the sysfs writes fail, the BIOS owns ASPM again (Setup option
-# reverted?) - fail loudly so cron/ansible output shows it.
+# Kernel-native ASPM/PM for the RTL8127 uplink; requires the hidden BIOS "Native
+# ASPM" = Enabled (Setup EC87D643-EBA4-4BB5-A1E5-3F3E36B20DA9 @0x51 = 0x01).
 set -eu
 
 NIC=$(lspci -Dn 2>/dev/null | awk '/10ec:8127/{print $1; exit}')
@@ -27,15 +14,11 @@ fi
 # Keep the sole uplink out of PCI runtime PM (cheap insurance, PBS lesson).
 echo on > "/sys/bus/pci/devices/$NIC/power/control"
 
-# Belt-and-suspenders: root-port LTR enable, masked and idempotent. The
-# kernel already sets this natively at boot; re-asserting guards against the
-# board's (historic, now likely moot) spontaneous clears without fighting
-# the kernel - it writes the same value the kernel wants.
+# Re-assert root-port LTR enable (masked, idempotent); the kernel already sets it.
 PORT=$(basename "$(dirname "$(readlink -f "/sys/bus/pci/devices/$NIC")")")
 setpci -s "$PORT" CAP_EXP+0x28.w=0400:0400
 
-# Knobs only exist when both link ends support the capability (e.g. some
-# PCH root ports lack L1 substates / ClockPM) - enable what is available.
+# Knobs only exist when both link ends support the capability.
 enable_knob() {
   if [ -e "$LINK/$1" ]; then
     echo 1 > "$LINK/$1"
@@ -51,11 +34,8 @@ case "$REV" in
     enable_knob l1_2_aspm
     ;;
   *)
-    # rev 08 (SFP+ ATF) and unknown revisions: plain L1 only - FINAL.
-    # 2026-08-14: L1.1 exit is broken at the hardware level of this
-    # card/board pairing (hard link death with fully configured chip,
-    # kernel-managed links, no storm). Never enable l1_1/l1_2 here.
-    # clkpm uses the same CLKREQ wake path - presumed fatal, keep off.
+    # rev 08 (SFP+ ATF) and unknown: plain L1 only, FINAL. L1.1 exit is broken in
+    # hardware on this card/board pair - never enable l1_1/l1_2/clkpm here.
     enable_knob l1_aspm
     ;;
 esac

@@ -1,7 +1,5 @@
 ---
-# Reverse Proxy LXC role
-# Creates a Debian 12 LXC container with Nginx, GeoIP blocking, 
-# CrowdSec, and Let's Encrypt wildcard certificates
+# Debian LXC running nginx with GeoIP blocking, CrowdSec and LE wildcard certs.
 
 - name: Download Debian 13 LXC template if not present
   ansible.builtin.command:
