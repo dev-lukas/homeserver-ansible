@@ -1,5 +1,4 @@
-# German Radarr hybrid profile template
-# Cloned from HD Bluray + WEB (GER) and extended with Remux-1080p
+# Cloned from HD Bluray + WEB (GER) and extended with Remux-1080p.
 
 quality_profiles:
   - name: HD Remux + WEB (GER)

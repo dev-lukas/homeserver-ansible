@@ -1,6 +1,5 @@
 ---
-# Install and configure Nginx with GeoIP2 module for geo-blocking
-# Using Debian's native Nginx package for GeoIP2 module compatibility
+# Debian's native nginx package, for GeoIP2 module compatibility.
 
 - name: Update apt cache
   ansible.builtin.command:
@@ -211,9 +210,7 @@
       ssl_session_cache shared:SSL:50m;
       ssl_session_tickets off;
 
-      # OCSP Stapling (disabled - Let'\''s Encrypt certs may not have OCSP URL)
-      # ssl_stapling on;
-      # ssl_stapling_verify on;
+      # OCSP stapling stays off: Let'\''s Encrypt certs may carry no OCSP URL.
       resolver 8.8.8.8 8.8.4.4 valid=300s;
       resolver_timeout 5s;
 

@@ -1,7 +1,5 @@
 ---
-# Deploy Docker Compose stacks for all *arr services
-
-# Deploy services in order: VPN first, then dependents
+# VPN first, then its dependents.
 - name: Deploy Gluetun VPN
   ansible.builtin.include_tasks: services/gluetun.yml
 

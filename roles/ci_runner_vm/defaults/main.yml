@@ -1,36 +1,27 @@
 ---
-# CI Runner VM role defaults
-
-# VM settings
 ci_runner_vmid: 108
 ci_runner_hostname: "ci-runner"
 ci_runner_storage: "vmpool"
 ci_runner_disk_size: "64"  # Size in GB - docker build caches + tool caches
 ci_runner_memory: 4096
 ci_runner_cores: 4
-# On-demand: do not start at boot. The ci_runner_autostart watchdog powers it on
-# when GitHub jobs queue and shuts it down when idle (cuts idle vCPU wakeups).
+# On-demand: the ci_runner_autostart watchdog owns power state, not boot.
 ci_runner_onboot: 0
 
-# Cloud image settings
 ci_runner_cloud_image_url: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2"
 ci_runner_cloud_image_path: "/var/lib/vz/template/iso/debian-13-generic-amd64.qcow2"
 
-# Network configuration
 ci_runner_bridge: "vmbr0"
 ci_runner_ip: "192.168.178.13"
 ci_runner_gateway: "192.168.178.1"
 ci_runner_netmask: "24"
 ci_runner_nameserver: "192.168.178.2"
 
-# SSH settings
 ci_runner_ssh_port: 22
 
-# UFW settings
 ci_runner_ufw_default_incoming: "deny"
 ci_runner_ufw_default_outgoing: "allow"
 
-# GitHub Actions runner settings
 ci_runner_github_user: "dev-lukas"
 ci_runner_runner_dir: "/opt/actions-runner"
 ci_runner_runner_labels: "self-hosted,linux,x64"
@@ -43,17 +34,20 @@ ci_runner_repos:
   - firephenix-website
   - homeserver-ansible
   - portfolio
+  - atsq
 
-# Toolchain settings (tasks/toolchain.yml)
-# Python minors the python-checks workflow may request (Debian 13 ships only
-# 3.13; the rest come from uv-managed CPython builds under /opt/uv-pythons).
+# Uninstalls these runners from the VM on the next run; safe to empty once applied.
+ci_runner_removed_repos:
+  - tsq  # renamed to atsq 2026-07-10 (PyPI name conflict)
+
+# Python minors the python-checks workflow may request; Debian 13 only ships 3.13,
+# the rest are uv-managed CPython builds.
 ci_runner_python_versions:
   - "3.11"
   - "3.12"
   - "3.13"
 ci_runner_uv_version: "0.11.25"
-# Shared caches written into each repo runner's .env: setup-node tool
-# downloads and Playwright browsers are stored once, not per repo runner.
+# Shared caches in each runner's .env, so downloads are stored once, not per repo.
 ci_runner_runner_env_entries:
   - key: RUNNER_TOOL_CACHE
     value: /opt/hostedtoolcache

@@ -1,5 +1,4 @@
-# German Anime profile template for Radarr
-# Based on nani8ot/configarr-anime - modified for WEBDL-720p only
+# Based on nani8ot/configarr-anime, modified for WEBDL-720p only.
 
 quality_profiles:
   - name: Anime HD (GER)

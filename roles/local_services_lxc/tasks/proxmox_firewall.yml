@@ -1,6 +1,5 @@
 ---
-# Configure the Proxmox host firewall for the apps LXC (default-drop inbound,
-# allow only SSH + the published service ports + ICMP).
+# Default-drop inbound; only SSH, the published service ports and ICMP get through.
 
 - name: Enable datacenter firewall
   ansible.builtin.command:
@@ -13,9 +12,7 @@
     state: directory
     mode: "0755"
 
-# /etc/pve is the Proxmox cluster FS (pmxcfs); it rejects the atomic temp+rename
-# that the copy module uses, so write the .fw file directly with a heredoc
-# (same approach as the jellyfin/immich roles).
+# pmxcfs rejects the copy module's atomic temp+rename, so write the .fw via heredoc.
 - name: Configure apps LXC firewall
   ansible.builtin.shell:
     cmd: |

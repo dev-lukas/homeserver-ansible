@@ -1,14 +1,9 @@
 ---
-# CI Runner autostart watchdog defaults
-#
-# Runs on the Proxmox host. Polls the GitHub API for queued/in-progress workflow
-# runs across the runner's repos and powers VM on/off with `qm` accordingly, so
-# the CI runner only consumes CPU (and C-state wakeups) while there is work.
-
+# Host-side watchdog: polls GitHub for queued runs and powers the VM on/off with
+# `qm`, so the runner only draws power while there is work.
 ci_runner_autostart_enabled: true
 
-# Which VM to manage and which repos to watch. Default to the values from the
-# ci_runner_vm role (same play), so there is a single source of truth.
+# Defaults come from the ci_runner_vm role in the same play, for one source of truth.
 ci_runner_autostart_vmid: "{{ ci_runner_vmid | default(108) }}"
 ci_runner_autostart_github_user: "{{ ci_runner_github_user | default('dev-lukas') }}"
 ci_runner_autostart_repos: "{{ ci_runner_repos | default([]) }}"
@@ -16,15 +11,10 @@ ci_runner_autostart_repos: "{{ ci_runner_repos | default([]) }}"
 # Fine-grained PAT with Actions: read on the repos (reuses the runner's PAT).
 ci_runner_autostart_pat: "{{ vault_github_runner_pat }}"
 
-# How often to poll, and how long the runner must be idle (no queued/in-progress
-# runs) before it is shut down.
 ci_runner_autostart_interval_sec: 90
 ci_runner_autostart_idle_minutes: 10
 
 ci_runner_autostart_state_dir: /var/lib/ci-runner-autostart
 
-# Keepalive: GitHub deletes the registration of any runner offline for ~14 days.
-# Because the VM is on-demand it can sit powered off longer than that for a quiet
-# repo, so this schedule wakes it on the 1st/11th/21st (max gap ~11 days < 14) to
-# let every runner reconnect. The autostart watchdog powers it back down on idle.
+# GitHub drops registrations after ~14 days offline, so wake the VM every ~11.
 ci_runner_keepalive_oncalendar: "*-*-01,11,21 04:30:00"

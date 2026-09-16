@@ -1,0 +1,11 @@
+[Unit]
+Description=Instant LTR re-assert on PCIe AER storms (RTL8127 uplink)
+After=systemd-journald.service
+
+[Service]
+ExecStart=/usr/local/sbin/aer-ltr-heal.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

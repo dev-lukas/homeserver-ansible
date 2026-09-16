@@ -1,6 +1,4 @@
 ---
-# Disable Proxmox cluster and HA services for standalone node
-
 - name: Stop and disable Proxmox cluster services
   ansible.builtin.systemd:
     name: "{{ item }}"

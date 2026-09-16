@@ -67,8 +67,7 @@
         - lxc
         - containers
 
-    # Always-on container registry (must exist before the reverse proxy that
-    # publishes it as registry.lukas-roth.dev).
+    # Must precede the reverse proxy that publishes it as registry.lukas-roth.dev.
     - role: registry_lxc
       tags:
         - registry
@@ -88,8 +87,7 @@
         - lxc
         - containers
 
-    # Combined apps LXC (Immich + local web services). Replaced the former
-    # immich_vm + local_services_vm roles (now removed); it is the single source.
+    # Combined apps LXC; the single source for the former immich_vm + local_services_vm.
     - role: local_services_lxc
       tags:
         - apps_lxc
@@ -105,8 +103,7 @@
         - lxc
         - containers
 
-    # Media services LXC (gluetun + *arr). Replaced the former media_services_vm
-    # role (now removed); it is the single source.
+    # Media services LXC (gluetun + *arr); the single source for the former media_services_vm.
     - role: media_services_lxc
       tags:
         - media_lxc
@@ -120,14 +117,21 @@
         - dev_vm
         - vm
 
+    # Lets Home Assistant power the dev VM; after dev_vm so its vars are in scope.
+    - role: proxmox_root/ha_vm_control
+      tags:
+        - ha_vm_control
+        - dev
+        - dev_vm
+        - power
+
     - role: ci_runner_vm
       tags:
         - ci_runner
         - ci
         - vm
 
-    # Host-side watchdog that powers the (onboot 0) CI runner VM on/off on demand.
-    # Placed after ci_runner_vm so its ci_runner_* vars are in scope.
+    # On-demand watchdog for the CI VM; after ci_runner_vm so its vars are in scope.
     - role: proxmox_root/ci_runner_autostart
       tags:
         - ci_runner_autostart

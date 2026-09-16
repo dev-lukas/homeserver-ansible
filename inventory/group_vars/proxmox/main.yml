@@ -1,10 +1,8 @@
 ---
-# Variables specific to Proxmox hosts
-
-# Network
 internal_subnet: "192.168.178.0/24"
 
-# Power management settings
 powertop_auto_tune: true
-autoaspm_enabled: true
+# Kernel-native NIC ASPM; needs the hidden BIOS "Native ASPM" = Enabled
+# (see roles/proxmox_root/power_management/tasks/nic_pm.yml).
+nic_pm_enabled: true
 ltr_ignore_enabled: true

@@ -1,20 +1,16 @@
 ---
-# Install Jellyfin in LXC container
-# Manual replication of https://repo.jellyfin.org/install-debuntu.sh for Debian 13 (trixie)
+# Manual replication of https://repo.jellyfin.org/install-debuntu.sh for trixie.
 
-# Step 1: Install dependencies
 - name: Install Jellyfin dependencies
   ansible.builtin.command:
     cmd: "pct exec {{ jellyfin_vmid }} -- apt-get install -y curl gnupg"
   changed_when: false
 
-# Step 2: Create APT keyring directory
 - name: Ensure APT keyrings directory exists
   ansible.builtin.command:
     cmd: "pct exec {{ jellyfin_vmid }} -- mkdir -p /etc/apt/keyrings"
   changed_when: false
 
-# Step 3: Download and install GPG key
 - name: Download Jellyfin repository GPG key
   ansible.builtin.command:
     cmd: "pct exec {{ jellyfin_vmid }} -- sh -c 'curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor --yes -o /etc/apt/keyrings/jellyfin.gpg'"
@@ -25,7 +21,7 @@
     cmd: "pct exec {{ jellyfin_vmid }} -- chmod 644 /etc/apt/keyrings/jellyfin.gpg"
   changed_when: false
 
-# Step 4: Add Jellyfin repository (Deb822 format for trixie)
+# Deb822 format, required for trixie.
 - name: Add Jellyfin repository
   ansible.builtin.command:
     cmd: |
@@ -39,7 +35,6 @@
       EOF'
   changed_when: false
 
-# Step 5: Update apt and install Jellyfin
 - name: Update APT cache
   ansible.builtin.command:
     cmd: "pct exec {{ jellyfin_vmid }} -- apt-get update"
@@ -50,15 +45,14 @@
     cmd: "pct exec {{ jellyfin_vmid }} -- apt-get install -y jellyfin"
   changed_when: false
 
-# Step 6: Fix permissions (workaround from install script)
+# Workaround carried over from the install script.
 - name: Fix Jellyfin config permissions
   ansible.builtin.command:
     cmd: "pct exec {{ jellyfin_vmid }} -- chown -R jellyfin:adm /etc/jellyfin"
   changed_when: false
   failed_when: false
 
-# Configure Jellyfin user for iGPU access
-# Key insight: Sync render/video group GIDs between host and container
+# iGPU access needs the render/video GIDs synced between host and container.
 
 # Get host render and video GIDs
 - name: Get host render group GID
@@ -117,16 +111,14 @@
   failed_when: false
   when: jellyfin_igpu_passthrough
 
-# NOTE: Do NOT chown the entire media directory - it breaks SABnzbd and other services
-# that expect files owned by UID 1000. Jellyfin only needs READ access to media files.
-# Only chown transcoding directory if needed.
+# Never chown the whole media dir: other services expect UID 1000 and Jellyfin
+# only needs read access. Transcoding dir only.
 - name: Ensure transcoding directory exists and is owned by jellyfin
   ansible.builtin.command:
     cmd: "pct exec {{ jellyfin_vmid }} -- sh -c 'mkdir -p {{ jellyfin_mediapool_target }}/transcoding && chown jellyfin:jellyfin {{ jellyfin_mediapool_target }}/transcoding'"
   changed_when: false
   failed_when: false
 
-# Start/restart Jellyfin
 - name: Restart Jellyfin to apply group changes
   ansible.builtin.command:
     cmd: "pct exec {{ jellyfin_vmid }} -- systemctl restart jellyfin"

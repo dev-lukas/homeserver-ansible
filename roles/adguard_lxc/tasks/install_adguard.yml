@@ -1,5 +1,4 @@
 ---
-# Install AdGuard Home in the LXC container
 
 - name: Check if AdGuard Home is already installed
   ansible.builtin.command:

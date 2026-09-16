@@ -1,0 +1,11 @@
+[Unit]
+Description=Bind RTL8127 NIC to per-revision driver policy
+After=networking.service
+Before=pve-guests.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/r8127-bind.sh
+
+[Install]
+WantedBy=multi-user.target

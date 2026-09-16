@@ -1,19 +1,15 @@
 ---
-# Configure Docker image pruning to prevent disk space issues
-
 - name: Create Docker prune script
   ansible.builtin.copy:
     dest: /usr/local/bin/docker-prune.sh
     content: |
       #!/bin/bash
-      # Docker cleanup script - removes unused images, containers, networks, and volumes
       
       echo "$(date): Starting Docker cleanup..."
       
       # Remove stopped containers older than 24 hours
       docker container prune -f --filter "until=24h"
       
-      # Remove unused images (not just dangling ones)
       docker image prune -a -f --filter "until=168h"  # 7 days
       
       # Remove unused volumes

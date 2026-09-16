@@ -52,8 +52,7 @@
             start_period: 30s
     mode: "0644"
 
-# Stop containers that will use gluetun's network to free up ports
-# This ensures idempotent deployment when switching network modes
+# Frees the ports so switching network modes stays idempotent.
 - name: Stop containers that use Gluetun network (to free ports)
   ansible.builtin.shell:
     cmd: docker stop {{ item }} && docker rm {{ item }}
@@ -87,8 +86,7 @@
       exit 1
   changed_when: false
 
-# When Gluetun is recreated, containers using network_mode: container:gluetun
-# lose their network namespace reference and must be recreated (not just restarted)
+# Recreating gluetun invalidates its netns, so dependents must be recreated too.
 - name: Recreate containers dependent on Gluetun network
   ansible.builtin.shell:
     cmd: docker compose up -d --force-recreate

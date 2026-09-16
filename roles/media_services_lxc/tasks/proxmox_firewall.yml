@@ -1,7 +1,5 @@
 ---
-# Configure the Proxmox host firewall for the media LXC (default-drop inbound,
-# allow SSH + the *arr/download service ports + ICMP). Written with a heredoc
-# because /etc/pve (pmxcfs) rejects the copy module's atomic rename.
+# Default-drop inbound; heredoc because pmxcfs rejects the copy module's rename.
 
 - name: Enable datacenter firewall
   ansible.builtin.command:

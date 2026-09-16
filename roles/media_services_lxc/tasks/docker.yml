@@ -1,6 +1,5 @@
 ---
-# Install Docker Engine inside the LXC, using the fuse-overlayfs storage driver
-# (overlay2 does not work in an unprivileged, nested LXC on ZFS).
+# fuse-overlayfs storage driver: overlay2 does not work in a nested LXC on ZFS.
 
 - name: Install Docker prerequisites + fuse-overlayfs
   ansible.builtin.apt:

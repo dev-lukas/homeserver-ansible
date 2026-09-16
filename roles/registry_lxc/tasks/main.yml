@@ -1,6 +1,6 @@
 ---
-# Always-on registry LXC: dataset on mediapool, unprivileged Debian container,
-# distribution binary as a hardened systemd service. No Docker, no nesting.
+# Unprivileged Debian container running the distribution binary as a hardened
+# systemd service. No Docker, no nesting.
 
 # --- Host prerequisites ---
 
@@ -18,9 +18,8 @@
     owner: "{{ registry_lxc_data_host_owner }}"
     group: "{{ registry_lxc_data_host_owner }}"
     mode: "0750"
-  # NOTE: when migrating the EXISTING registry data from the CI VM, the rsynced
-  # tree also needs a one-time recursive chown to registry_lxc_data_host_owner.
-  # That is a deliberate migration step, not done on every run.
+  # Migrating existing data also needs a one-time recursive chown to
+  # registry_lxc_data_host_owner; that is a deliberate step, not done every run.
 
 - name: Download Debian LXC template if not present
   ansible.builtin.command:

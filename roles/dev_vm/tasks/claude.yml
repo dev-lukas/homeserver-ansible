@@ -1,6 +1,4 @@
 ---
-# Install Claude Code CLI via native installer
-
 - name: Check if Claude Code is already installed
   ansible.builtin.command:
     cmd: claude --version

@@ -1,41 +1,34 @@
-## upsmon.conf - UPS monitor configuration
-## Managed by Ansible
+## Managed by Ansible.
 
-# Monitor the UPS - syntax: MONITOR <system> <powervalue> <username> <password> <type>
+# MONITOR <system> <powervalue> <username> <password> <type>
 MONITOR eaton@localhost 1 upsmon {{ ups_monitor_password | default('changeme') }} master
 
-# Minimum battery percentage before initiating shutdown
+# Power supplies that must stay fed to keep this system running.
 MINSUPPLIES 1
 
-# Shutdown command
 SHUTDOWNCMD "/sbin/shutdown -h +0"
 
-# Notification command (optional - can be customized)
 NOTIFYCMD /usr/sbin/upssched
 
-# Poll interval in seconds
+# Seconds between UPS polls; POLLFREQALERT applies while on battery.
 POLLFREQ 5
-
-# Poll interval when on battery
 POLLFREQALERT 5
 
-# Time to wait before declaring UPS dead
+# Seconds to wait for slaves to disconnect during a shutdown.
 HOSTSYNC 15
 
-# Seconds between shutdown warning and actual shutdown
+# Seconds a UPS may stay unreachable before it is declared dead.
 DEADTIME 15
 
-# Final delay before forced shutdown
+# Seconds between the final warning and the shutdown.
 FINALDELAY 5
 
-# Power down flag file
 POWERDOWNFLAG /etc/killpower
 
-# Battery percentage threshold for low battery (triggers shutdown)
-# This sets the threshold at 25% as requested
+# Seconds between "replace battery" warnings. The low-battery shutdown
+# threshold is ups.conf's override.battery.charge.low, not this.
 RBWARNTIME 43200
 
-# Notification flags
 NOTIFYMSG ONLINE    "UPS %s on line power"
 NOTIFYMSG ONBATT    "UPS %s on battery"
 NOTIFYMSG LOWBATT   "UPS %s battery is low"

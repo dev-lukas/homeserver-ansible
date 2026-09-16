@@ -1,6 +1,5 @@
 ---
-# Install and configure Certbot with Hetzner DNS plugin for wildcard certificates
-# Using pip in a virtual environment (no snap required)
+# Certbot + Hetzner DNS plugin for wildcard certs, pip-installed in a venv.
 
 - name: Install Python and pip dependencies
   ansible.builtin.command:

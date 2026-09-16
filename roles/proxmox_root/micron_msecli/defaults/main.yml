@@ -1,6 +1,4 @@
 ---
-# Micron Storage Executive CLI
-
 micron_msecli_download_page: "https://www.micron.com/sales-support/downloads/software-drivers/storage-executive-software"
 micron_msecli_base_url: "https://www.micron.com"
 micron_msecli_cache_dir: "/var/cache/micron-msecli"
