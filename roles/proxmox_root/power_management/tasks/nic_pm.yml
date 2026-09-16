@@ -1,0 +1,124 @@
+---
+# RTL8127 uplink NIC power management - kernel-native ASPM regime.
+#
+# History (2026-06 .. 2026-08): with the BIOS default "Native ASPM: Auto"
+# the OS had no ASPM control, r8169 probed with aspm_manageable=0 and left
+# the chip-side CLKREQ/LTR/L1.2 machinery unconfigured, the root port's
+# LTR-enable bit was 0 at boot and got spontaneously cleared ~weekly (UR
+# storms; healed by a setpci cron), and forcing L1 substates via setpci
+# hard-killed the SFP+ (ATF, rev 08) card's link. After flipping the hidden
+# BIOS option "Native ASPM" to Enabled (Setup varstore
+# EC87D643-EBA4-4BB5-A1E5-3F3E36B20DA9 offset 0x51 = 0x01 via efivarfs,
+# NVRAM backups in /root/efivar-backups-20260813/) the kernel owns ASPM:
+# it sets port LTR natively, the sysfs link/ knobs work, and nic-aspm.sh
+# replaces all the old hand-forged setpci writes (autoaspm.py, removed).
+
+- name: Install nic-aspm helper (kernel-native ASPM policy)
+  ansible.builtin.copy:
+    src: nic-aspm.sh
+    dest: /usr/local/sbin/nic-aspm.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Remove legacy autoaspm.py (setpci era, replaced by nic-aspm.sh)
+  ansible.builtin.file:
+    path: /usr/local/sbin/autoaspm.py
+    state: absent
+
+- name: Remove legacy autoaspm cron jobs
+  ansible.builtin.cron:
+    name: "{{ item }}"
+    user: root
+    state: absent
+  loop:
+    - "Realtek RTL8127 ASPM"
+    - "Realtek RTL8127 ASPM re-assert"
+
+- name: Configure nic-aspm cron job on reboot
+  ansible.builtin.cron:
+    name: "RTL8127 NIC power management"
+    special_time: reboot
+    job: "(sleep 15 && /usr/local/sbin/nic-aspm.sh)"
+    user: root
+    state: present
+
+# The sysfs settings are kernel-tracked and survive AER-recovery restores,
+# so this guard is belt-and-suspenders, not life support (unlike the old
+# every-minute setpci heal). It also re-pins power/control and the port LTR
+# bit, and fails loudly if the BIOS ever re-takes ASPM ownership.
+- name: Configure nic-aspm re-assert cron job
+  ansible.builtin.cron:
+    name: "RTL8127 NIC PM re-assert"
+    minute: "*/5"
+    job: "/usr/local/sbin/nic-aspm.sh > /dev/null 2>&1"
+    user: root
+    state: present
+
+# Slot-independent uplink naming: any RTL8127-family card in any slot comes
+# up as nic0 (matched by driver, not MAC/path), so card swaps and slot moves
+# need no network reconfiguration. /etc/network/interfaces (not managed
+# here) uses "bridge-ports nic0".
+- name: Install driver-matched uplink naming rule (nic0)
+  ansible.builtin.copy:
+    src: 50-nic0.link
+    dest: /etc/systemd/network/50-nic0.link
+    owner: root
+    group: root
+    mode: "0644"
+
+# Per-revision driver policy enforcer: rev 05 RJ45 -> r8169, rev 08 ATF ->
+# vendor r8127 when (and only when) an r8127.ko is installed for the running
+# kernel. Inert no-op otherwise; never leaves the NIC driverless.
+- name: Install r8127-bind policy script
+  ansible.builtin.copy:
+    src: r8127-bind.sh
+    dest: /usr/local/sbin/r8127-bind.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install r8127-bind service unit
+  ansible.builtin.copy:
+    src: r8127-bind.service
+    dest: /etc/systemd/system/r8127-bind.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: r8127_bind_unit
+
+- name: Enable r8127-bind service
+  ansible.builtin.systemd:
+    name: r8127-bind.service
+    enabled: true
+    daemon_reload: "{{ r8127_bind_unit.changed }}"
+
+# Sub-second LTR storm healing (see script header). The */5 nic-aspm cron
+# remains the slow backstop.
+- name: Install AER instant-heal script
+  ansible.builtin.copy:
+    src: aer-ltr-heal.sh
+    dest: /usr/local/sbin/aer-ltr-heal.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install AER instant-heal service unit
+  ansible.builtin.copy:
+    src: aer-ltr-heal.service
+    dest: /etc/systemd/system/aer-ltr-heal.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: aer_heal_unit
+
+- name: Enable and start AER instant-heal service
+  ansible.builtin.systemd:
+    name: aer-ltr-heal.service
+    enabled: true
+    state: started
+    daemon_reload: "{{ aer_heal_unit.changed }}"
+
+- name: Run nic-aspm now
+  ansible.builtin.command: /usr/local/sbin/nic-aspm.sh
+  changed_when: false
