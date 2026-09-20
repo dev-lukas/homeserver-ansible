@@ -39,6 +39,12 @@ media_services_nfs_mount: "/media"
 
 media_services_vpn_service_provider: "protonvpn"
 media_services_vpn_type: "wireguard"
+# ProtonVPN WireGuard server from the downloaded config; the private key and
+# address are secrets (protonvpn-wireguard item in Proton Pass).
+media_services_vpn_server_name: "CH#350"
+media_services_vpn_server_public_key: "VNNO5MYorFu1UerHvoXccW6TvotxbJ1GAGJKtzM9HTY="
+media_services_vpn_endpoint_ip: "185.159.157.23"
+media_services_vpn_endpoint_port: 51820
 
 media_services_prowlarr_port: 9696
 media_services_sonarr_port: 8989
