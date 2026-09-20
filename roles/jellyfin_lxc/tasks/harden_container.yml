@@ -1,5 +1,4 @@
 ---
-# Security hardening for Jellyfin LXC container (Debian)
 
 - name: Install OpenSSH server
   ansible.builtin.command:

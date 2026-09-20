@@ -1,6 +1,4 @@
 ---
-# Glances handlers
-
 - name: Restart glances
   ansible.builtin.systemd:
     name: glances

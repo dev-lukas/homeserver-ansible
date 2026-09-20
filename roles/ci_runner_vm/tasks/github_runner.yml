@@ -1,13 +1,6 @@
 ---
-# Install and configure GitHub Actions self-hosted runners (one per repo).
-#
-# Self-healing: GitHub automatically deletes the server-side registration of any
-# runner that has not connected for ~14 days. On the on-demand CI VM this happens
-# to any repo that sees no CI activity for two weeks - the local .runner file
-# still exists, so a naive "register only when .runner is missing" play silently
-# skips it and the runner loops on "Failed to create a session. The runner
-# registration has been deleted from the server". We therefore (re)register a
-# runner whenever it is either unconfigured OR its listener is not active.
+# One runner per repo. GitHub deletes registrations after ~14 days offline while
+# .runner survives locally, so re-register on unconfigured OR inactive listener.
 
 - name: Create runner user
   ansible.builtin.user:
@@ -58,9 +51,7 @@
   changed_when: false
   failed_when: false
 
-# A repo needs (re)registration if it has never been configured, or if its
-# listener is not currently active (dead service == deleted/broken registration
-# while the VM is up, since healthy runners come up at boot and stay "active").
+# A dead service while the VM is up means a deleted or broken registration.
 - name: Determine which runners need (re)registration
   ansible.builtin.set_fact:
     runners_to_register: >-
@@ -110,15 +101,14 @@
     url: "https://api.github.com/repos/{{ ci_runner_github_user }}/{{ item }}/actions/runners/registration-token"
     method: POST
     headers:
-      Authorization: "Bearer {{ vault_github_runner_pat }}"
+      Authorization: "Bearer {{ secret_github_runner_pat }}"
       Accept: "application/vnd.github+json"
     status_code: 201
   loop: "{{ runners_to_register | default([]) }}"
   register: reg_tokens
   no_log: true
 
-# Clears a stale local .runner/.credentials so config.sh can register cleanly.
-# `removes:` makes this a no-op for never-configured repos (no .runner yet).
+# Clears stale .runner/.credentials; `removes:` no-ops for never-configured repos.
 - name: Clear stale local registration before reconfiguring
   ansible.builtin.command:
     cmd: ./config.sh remove --local
@@ -154,8 +144,7 @@
     creates: "/etc/systemd/system/actions.runner.{{ ci_runner_github_user }}-{{ item }}.{{ ci_runner_hostname }}-{{ item }}.service"
   loop: "{{ ci_runner_repos }}"
 
-# Use the systemd module (not svc.sh start with failed_when:false) so a runner
-# that fails to come up surfaces as a failed task instead of being masked.
+# systemd module, not svc.sh, so a runner that fails to start surfaces as a failure.
 - name: Ensure every runner service is enabled and running
   ansible.builtin.systemd:
     name: "actions.runner.{{ ci_runner_github_user }}-{{ item }}.{{ ci_runner_hostname }}-{{ item }}.service"
@@ -164,8 +153,7 @@
     daemon_reload: true
   loop: "{{ ci_runner_repos }}"
 
-# Re-registered runners may have a unit that was already loaded but dead; force a
-# restart so they pick up the fresh credentials immediately.
+# A re-registered runner may have a loaded-but-dead unit holding stale credentials.
 - name: Restart re-registered runner services
   ansible.builtin.systemd:
     name: "actions.runner.{{ ci_runner_github_user }}-{{ item }}.{{ ci_runner_hostname }}-{{ item }}.service"
@@ -181,3 +169,31 @@
       {% endfor %}
       (Re)registered this run: {{ runners_to_register | default([]) | join(', ') or 'none' }}
       Labels: {{ ci_runner_runner_labels }}
+
+# --- Cleanup of removed/renamed repos ---
+# The GitHub-side registration is left alone; it is garbage-collected after ~14 days.
+
+- name: Check for stale runner dirs of removed repos
+  ansible.builtin.stat:
+    path: "{{ ci_runner_runner_dir }}/{{ item }}"
+  loop: "{{ ci_runner_removed_repos }}"
+  register: removed_runner_dirs
+
+- name: Uninstall runner service of removed repos
+  ansible.builtin.command:
+    cmd: ./svc.sh uninstall
+    chdir: "{{ ci_runner_runner_dir }}/{{ item.item }}"
+    removes: "/etc/systemd/system/actions.runner.{{ ci_runner_github_user }}-{{ item.item }}.{{ ci_runner_hostname }}-{{ item.item }}.service"
+  loop: "{{ removed_runner_dirs.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+
+- name: Remove stale runner directory of removed repos
+  ansible.builtin.file:
+    path: "{{ ci_runner_runner_dir }}/{{ item.item }}"
+    state: absent
+  loop: "{{ removed_runner_dirs.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists

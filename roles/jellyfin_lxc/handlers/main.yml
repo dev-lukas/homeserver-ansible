@@ -1,5 +1,4 @@
 ---
-# Handlers for jellyfin_lxc role
 
 - name: Reload pve-firewall
   ansible.builtin.command:

@@ -1,7 +1,4 @@
 ---
-# AdGuard Home LXC role
-# Creates an Alpine LXC container, hardens it, and installs AdGuard Home
-
 - name: Download Alpine LXC template if not present
   ansible.builtin.command:
     cmd: pveam download local alpine-3.22-default_20250617_amd64.tar.xz

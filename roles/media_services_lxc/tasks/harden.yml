@@ -1,8 +1,6 @@
 ---
-# Security hardening inside the apps LXC (runs over SSH, delegated).
-# Matches the jellyfin LXC / VM hardening: SSH key-only + sysctl. In-guest UFW
-# is intentionally omitted - this is a Docker host (Docker manages its own
-# iptables) behind the Proxmox host firewall (see proxmox_firewall.yml).
+# SSH key-only + sysctl. No in-guest UFW on purpose: Docker owns its iptables and
+# the Proxmox host firewall is in front (see proxmox_firewall.yml).
 
 - name: Disable root password login via SSH
   ansible.builtin.lineinfile:
@@ -44,8 +42,7 @@
       # Enable SYN cookies
       net.ipv4.tcp_syncookies = 1
 
-# Some net.* keys are read-only in an unprivileged container netns; apply
-# best-effort so a sandboxed key never fails the run.
+# Some net.* keys are read-only in an unprivileged netns, so apply best-effort.
 - name: Apply sysctl settings (best-effort in LXC)
   ansible.builtin.command:
     cmd: sysctl -p /etc/sysctl.d/99-security.conf

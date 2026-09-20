@@ -1,5 +1,4 @@
-# {{ item.name }} - {{ item.subdomain }}.{{ reverse_proxy_domain }}
-# Managed by Ansible - do not edit manually
+# {{ item.subdomain }}.{{ reverse_proxy_domain }} - managed by Ansible.
 
 # Upstream definition
 upstream {{ item.name }}_backend {

@@ -1,8 +1,6 @@
 ---
-# Media services LXC: gluetun VPN + *arr stack in an unprivileged Docker-in-LXC
-# container. Direct ZFS bind mount for the media library and /dev/net/tun
-# passthrough for gluetun. Self-contained (own copies of the compose tasks) so
-# media_services_vm can be deleted after migration.
+# gluetun VPN + *arr stack in an unprivileged Docker-in-LXC, with a ZFS bind
+# mount for the library and /dev/net/tun passed through for gluetun.
 
 # --- Host prerequisites ---
 
@@ -21,9 +19,8 @@
   args:
     creates: "/var/lib/vz/template/cache/{{ media_lxc_template_download }}"
 
-# Media library directory tree on the host ZFS pool (bind-mounted into the LXC).
-# Relocated from the former nfs_server role. Non-recursive (the library already
-# exists and is 1000-owned; a recursive chown over 157G every run is avoided).
+# Non-recursive on purpose: the library is already 1000-owned and a recursive
+# chown over 157G on every run is not worth it.
 - name: Ensure media library subdirectories exist (owned by PUID/PGID 1000)
   ansible.builtin.file:
     path: "{{ item }}"
@@ -145,7 +142,7 @@
     dest: /tmp/media_lxc_authorized_keys
     mode: "0644"
     content: |
-      {{ vault_ansible_deploy_public_key }}
+      {{ secret_ansible_deploy_public_key }}
       {% for key in ssh_authorized_keys | default([]) %}{% if key is string %}{{ key }}
       {% endif %}{% endfor %}
   no_log: true
@@ -183,7 +180,6 @@
     name: "{{ media_lxc_hostname }}"
     ansible_host: "{{ media_lxc_ip }}"
     ansible_user: root
-    ansible_ssh_private_key_file: /tmp/.ansible_deploy_key
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30"
     ansible_ssh_retries: 3
     groups: media_lxc_target

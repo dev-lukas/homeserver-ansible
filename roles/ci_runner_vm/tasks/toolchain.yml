@@ -1,10 +1,6 @@
 ---
-# CI toolchain tailored to the ci-cd-actions workflows (runs inside the VM):
-# - shared actions tool cache (setup-node downloads once, not per repo runner)
-# - Python minors via uv (python-checks resolves pythonX.Y from PATH;
-#   Debian 13 only ships 3.13)
-# - Playwright chromium system deps + shared browser cache
-# - build essentials and a docker prune cron to keep the disk bounded
+# Toolchain for the ci-cd-actions workflows: shared tool cache, uv-managed Python
+# minors, Playwright deps, build essentials and a docker prune cron.
 
 - name: Install general build packages
   ansible.builtin.apt:
@@ -18,9 +14,7 @@
     state: present
 
 # --- Shared GitHub Actions tool cache ---
-# Runs AFTER github_runner.yml: the per-repo runner directories and services
-# must already exist. The runner only reads .env at process start, so restart
-# any runner whose env entries changed.
+# Must run after github_runner.yml; .env is only read at runner start.
 
 - name: Create shared actions tool cache directory
   ansible.builtin.file:

@@ -1,0 +1,8 @@
+# Stable uplink name regardless of slot or card variant; matched by driver so it
+# covers RJ45 (r8169) and ATF (r8127). /etc/network/interfaces uses nic0.
+[Match]
+Driver=r8169 r8127
+Type=ether
+
+[Link]
+Name=nic0

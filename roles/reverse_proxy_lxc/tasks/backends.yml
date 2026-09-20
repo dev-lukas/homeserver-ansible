@@ -1,7 +1,4 @@
 ---
-# Deploy backend proxy configurations
-# This task file is included when reverse_proxy_backends is defined
-
 - name: Create ACME challenge directory
   ansible.builtin.command:
     cmd: "pct exec {{ reverse_proxy_vmid }} -- mkdir -p /var/www/letsencrypt/.well-known/acme-challenge"
@@ -56,8 +53,7 @@
   ansible.builtin.shell:
     cmd: |
       pct exec {{ reverse_proxy_vmid }} -- bash -c 'cat > /etc/nginx/sites-available/{{ item.name }}.conf << VHOSTEOF
-      # {{ item.name }} - {{ item.subdomain }}.{{ reverse_proxy_domain }}
-      # Managed by Ansible - do not edit manually
+      # {{ item.subdomain }}.{{ reverse_proxy_domain }} - managed by Ansible.
       # Access: {{ "internal only" if item.internal_only | default(false) else "external (with geo-blocking)" }}
 
       # Upstream definition

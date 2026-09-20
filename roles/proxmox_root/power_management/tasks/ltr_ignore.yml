@@ -1,6 +1,4 @@
 ---
-# LTR ignore configuration for Intel power management
-
 - name: Configure LTR ignore cron job
   ansible.builtin.cron:
     name: "ltr ignore configuration"

@@ -1,5 +1,4 @@
 ---
-# Install AdGuard Home in the LXC container
 
 - name: Check if AdGuard Home is already installed
   ansible.builtin.command:
@@ -95,6 +94,7 @@
 
 # Configure upstream DNS servers (Quad9 + Mullvad with parallel requests, ControlD as fallback)
 - name: Configure upstream DNS servers
+  no_log: true  # admin credentials are in the command line
   ansible.builtin.command:
     cmd: |
       pct exec {{ adguard_vmid }} -- sh -c 'curl -s -u "{{ adguard_admin_user }}:{{ adguard_admin_password }}" \
@@ -121,6 +121,7 @@
 
 # Add Hagezi blocklists from AdGuard's official filter options
 - name: Add Hagezi Pro blocklist
+  no_log: true  # admin credentials are in the command line
   ansible.builtin.command:
     cmd: |
       pct exec {{ adguard_vmid }} -- sh -c 'curl -s -u "{{ adguard_admin_user }}:{{ adguard_admin_password }}" \
@@ -135,6 +136,7 @@
   failed_when: false
 
 - name: Add Hagezi Xiaomi Tracker blocklist
+  no_log: true  # admin credentials are in the command line
   ansible.builtin.command:
     cmd: |
       pct exec {{ adguard_vmid }} -- sh -c 'curl -s -u "{{ adguard_admin_user }}:{{ adguard_admin_password }}" \
@@ -149,6 +151,7 @@
   failed_when: false
 
 - name: Add Hagezi Windows Tracker blocklist
+  no_log: true  # admin credentials are in the command line
   ansible.builtin.command:
     cmd: |
       pct exec {{ adguard_vmid }} -- sh -c 'curl -s -u "{{ adguard_admin_user }}:{{ adguard_admin_password }}" \
@@ -163,6 +166,7 @@
   failed_when: false
 
 - name: Add Hagezi Apple Tracker blocklist
+  no_log: true  # admin credentials are in the command line
   ansible.builtin.command:
     cmd: |
       pct exec {{ adguard_vmid }} -- sh -c 'curl -s -u "{{ adguard_admin_user }}:{{ adguard_admin_password }}" \
@@ -177,6 +181,7 @@
   failed_when: false
 
 - name: Refresh blocklist filters
+  no_log: true  # admin credentials are in the command line
   ansible.builtin.command:
     cmd: |
       pct exec {{ adguard_vmid }} -- sh -c 'curl -s -u "{{ adguard_admin_user }}:{{ adguard_admin_password }}" \

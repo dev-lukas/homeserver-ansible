@@ -1,9 +1,9 @@
 ---
-# Rasdaemon - ECC memory error monitoring
-
-- name: Install rasdaemon
+- name: Install rasdaemon (and sqlite3 for DB pruning)
   ansible.builtin.apt:
-    name: rasdaemon
+    name:
+      - rasdaemon
+      - sqlite3
     state: present
     update_cache: true
 
@@ -90,7 +90,6 @@
     name: "local-services-ecc"
     ansible_host: "{{ apps_lxc_ip }}"
     ansible_user: root
-    ansible_ssh_private_key_file: /tmp/.ansible_deploy_key
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
   when: vm_reachable.state is defined and vm_reachable.state == "started"
 
@@ -129,4 +128,17 @@
     cmd: /usr/local/bin/ecc-stats.sh {{ apps_lxc_ip }} /opt/stacks/homepage/api/ecc.json
   when: vm_reachable.state is defined and vm_reachable.state == "started"
   changed_when: true
+
+# LTR-clear storms log 10k-1M+ aer_event rows per episode (562 MB by 2026-08),
+# so keep 60 days of AER; ECC and devlink rows are small and kept forever.
+- name: Configure monthly rasdaemon AER prune cron job
+  ansible.builtin.cron:
+    name: "Prune rasdaemon AER events"
+    special_time: monthly
+    user: root
+    job: >-
+      systemctl stop rasdaemon &&
+      sqlite3 /var/lib/rasdaemon/ras-mc_event.db
+      "DELETE FROM aer_event WHERE timestamp < datetime('now','-60 days'); VACUUM;"
+      ; systemctl start rasdaemon
 

@@ -1,6 +1,5 @@
 ---
-# Development VM role
-# Creates a Debian 13 VM with cloud-init, Docker, and development tools
+# Debian 13 VM with cloud-init, Docker and the development toolchain.
 
 # Phase 1: Create VM on Proxmox host
 - name: Download Debian cloud image if not present
@@ -33,8 +32,7 @@
       --onboot {{ dev_vm_onboot }}
   when: vm_status.rc != 0
 
-# Dev VM is started/stopped manually (only needed while developing). Enforce
-# onboot here so an already-created VM picks up the setting too.
+# Enforced here too, because qm create only applies it on first build.
 - name: Ensure dev VM onboot matches desired state
   ansible.builtin.shell: |
     cur=$(qm config {{ dev_vm_vmid }} | awk '/^onboot:/{print $2}')
@@ -88,7 +86,7 @@
 - name: Write all SSH public keys to temp file for cloud-init
   ansible.builtin.copy:
     content: |
-      {{ vault_ansible_deploy_public_key }}
+      {{ secret_ansible_deploy_public_key }}
       {% for key in ssh_authorized_keys %}{% if key is string %}{{ key }}
       {% endif %}{% endfor %}
     dest: /tmp/vm_ssh_keys.pub
@@ -137,7 +135,6 @@
     name: "{{ dev_vm_hostname }}"
     ansible_host: "{{ dev_vm_ip }}"
     ansible_user: root
-    ansible_ssh_private_key_file: /tmp/.ansible_deploy_key
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
     groups: dev_vm_target
 

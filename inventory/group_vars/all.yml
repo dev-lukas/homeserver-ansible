@@ -1,26 +1,15 @@
 ---
-# Global variables for all hosts
-
-# SSH configuration
 ssh_authorized_keys:
   - "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIAbJvERLxQAbXMZDvuPqNNTvrhLj+HLUdvWdGhf/QA/0AAAABHNzaDo= PC Key"
   - "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIOf70dFGulaLfWDUzJArmkEsxwkashhb4d38myfC4zaqAAAABHNzaDo= Laptop Key"
-  - "{{ vault_ansible_deploy_public_key | default(omit) }}"
-# Timezone (adjust as needed)
+  - "{{ secret_ansible_deploy_public_key | default(omit) }}"
 timezone: "Europe/Berlin"
 
-# Hardened apt upgrade routine, single source of truth for all Debian guests.
-# Piped into `bash -s` on each target (over SSH or `pct exec`), which avoids
-# any shell-quoting issues. Reliability features:
-#   - DPkg::Lock::Timeout=600 : wait (up to 10 min) for the lock instead of
-#     failing instantly when unattended-upgrades / apt-daily is running. This
-#     is the main fix for upgrades failing "when a lot of updates happen".
-#   - --force-confdef/--force-confold : never block on an interactive
-#     config-file prompt during large upgrades.
-#   - dpkg --configure -a : recover automatically from a previously
-#     interrupted run instead of staying wedged on every future run.
-# Emits the marker PKGS_CHANGED on stdout when something was actually upgraded,
-# so Ansible can report an accurate changed/ok status.
+# Proton Pass vault holding SSH Key items (agent + deploy public key lookup).
+secrets_ssh_vault: ssh-keys
+
+# Hardened apt upgrade for every Debian guest, piped into `bash -s`; the lock
+# timeout is what keeps runs from failing under a pile of updates.
 apt_maintenance_script: |
   set -euo pipefail
   export DEBIAN_FRONTEND=noninteractive
@@ -32,5 +21,16 @@ apt_maintenance_script: |
   apt-get $APT_OPTS -y autoremove
   apt-get $APT_OPTS clean
   if ! printf '%s\n' "$upgrade_out" | grep -q '^0 upgraded, 0 newly installed, 0 to remove'; then
+    echo "PKGS_CHANGED"
+  fi
+
+# Alpine counterpart, piped into `sh -s` through `pct exec`. stdin from /dev/null
+# so no child holds the exec pipe; callers must still wrap the exec in `timeout`.
+apk_maintenance_script: |
+  set -eu
+  apk update
+  upgrade_out=$(apk upgrade --no-cache 2>&1 </dev/null)
+  printf '%s\n' "$upgrade_out"
+  if printf '%s\n' "$upgrade_out" | grep -qE '^\([0-9]+/[0-9]+\) (Upgrading|Installing|Purging)'; then
     echo "PKGS_CHANGED"
   fi

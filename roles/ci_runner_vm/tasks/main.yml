@@ -1,7 +1,5 @@
 ---
-# CI Runner VM role
-# Creates a lean Debian 13 VM with per-repo GitHub Actions runners and the
-# CI toolchain. (The container registry lives in its own LXC: registry_lxc.)
+# Debian 13 VM with per-repo GitHub Actions runners and the CI toolchain.
 
 - name: Check if VM exists
   ansible.builtin.command:
@@ -9,18 +7,14 @@
   register: vm_status
   failed_when: false
   changed_when: false
-  # Tagged so a targeted run (e.g. --tags ci_runner to self-heal a runner) still
-  # establishes VM state, powers it on and registers the delegation host below.
+  # Tagged so a targeted run still powers the VM on and registers the delegation host.
   tags:
     - ci_runner
     - ci
     - vm
 
-# Pause the autostart watchdog for the duration of this play: it would
-# otherwise `qm shutdown` the VM mid-configuration once GitHub shows no
-# active jobs for 10 minutes. Re-enabled at the end of the role. If a run
-# aborts in between, restart it with:
-#   systemctl start ci-runner-autostart.timer
+# The watchdog would shut the VM down mid-configuration. Re-enabled at the end of
+# the role; after an aborted run: systemctl start ci-runner-autostart.timer
 - name: Pause ci-runner autostart watchdog during provisioning
   ansible.builtin.systemd:
     name: ci-runner-autostart.timer
@@ -57,9 +51,7 @@
       --onboot {{ ci_runner_onboot }}
   when: vm_status.rc != 0
 
-# CI Runner is on-demand: it is powered on by the ci_runner_autostart watchdog
-# when GitHub jobs queue, and shut down again when idle. Enforce onboot here so
-# already-created VMs pick up the setting too (qm create only runs on first build).
+# Enforced here too, because qm create only applies it on first build.
 - name: Ensure CI Runner onboot matches desired state
   ansible.builtin.shell: |
     cur=$(qm config {{ ci_runner_vmid }} | awk '/^onboot:/{print $2}')
@@ -73,9 +65,7 @@
   tags:
     - onboot
 
-# Reconcile CPU/RAM/disk of the existing VM with the desired vars (qm create
-# only applies them on first build). May shut the VM down; the "Start the VM"
-# task below boots it with the new specs.
+# qm create only applies specs on first build. May power-cycle the VM.
 - name: Reconcile VM specs with desired values
   ansible.builtin.include_tasks:
     file: reconcile.yml
@@ -130,7 +120,7 @@
 - name: Write all SSH public keys to temp file for cloud-init
   ansible.builtin.copy:
     content: |
-      {{ vault_ansible_deploy_public_key }}
+      {{ secret_ansible_deploy_public_key }}
       {% for key in ssh_authorized_keys %}{% if key is string %}{{ key }}
       {% endif %}{% endfor %}
     dest: /tmp/vm_ssh_keys.pub
@@ -187,7 +177,6 @@
     name: "{{ ci_runner_hostname }}"
     ansible_host: "{{ ci_runner_ip }}"
     ansible_user: root
-    ansible_ssh_private_key_file: /tmp/.ansible_deploy_key
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
     groups: ci_runner_target
   tags:
@@ -338,9 +327,7 @@
     - ci
     - vm
 
-# Counterpart to the pause at the top of this role. The watchdog resumes
-# start/stop duty; it will shut the VM down again once GitHub shows no
-# active jobs for the idle window.
+# Counterpart to the pause at the top of this role.
 - name: Resume ci-runner autostart watchdog
   ansible.builtin.systemd:
     name: ci-runner-autostart.timer

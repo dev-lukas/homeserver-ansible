@@ -1,6 +1,6 @@
 ---
-# Always-on registry LXC: dataset on mediapool, unprivileged Debian container,
-# distribution binary as a hardened systemd service. No Docker, no nesting.
+# Unprivileged Debian container running the distribution binary as a hardened
+# systemd service. No Docker, no nesting.
 
 # --- Host prerequisites ---
 
@@ -18,9 +18,8 @@
     owner: "{{ registry_lxc_data_host_owner }}"
     group: "{{ registry_lxc_data_host_owner }}"
     mode: "0750"
-  # NOTE: when migrating the EXISTING registry data from the CI VM, the rsynced
-  # tree also needs a one-time recursive chown to registry_lxc_data_host_owner.
-  # That is a deliberate migration step, not done on every run.
+  # Migrating existing data also needs a one-time recursive chown to
+  # registry_lxc_data_host_owner; that is a deliberate step, not done every run.
 
 - name: Download Debian LXC template if not present
   ansible.builtin.command:
@@ -80,7 +79,7 @@
     dest: /tmp/registry_lxc_authorized_keys
     mode: "0644"
     content: |
-      {{ vault_ansible_deploy_public_key }}
+      {{ secret_ansible_deploy_public_key }}
       {% for key in ssh_authorized_keys | default([]) %}{% if key is string %}{{ key }}
       {% endif %}{% endfor %}
   no_log: true
@@ -118,7 +117,6 @@
     name: "{{ registry_lxc_hostname }}"
     ansible_host: "{{ registry_lxc_ip }}"
     ansible_user: root
-    ansible_ssh_private_key_file: /tmp/.ansible_deploy_key
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30"
     ansible_ssh_retries: 3
     groups: registry_lxc_target

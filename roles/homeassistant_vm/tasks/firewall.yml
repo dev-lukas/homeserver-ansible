@@ -1,6 +1,5 @@
 ---
-# Proxmox firewall configuration for Home Assistant OS VM
-# Implements restrictive firewall rules allowing only necessary traffic
+# Restrictive inbound rules; only the ports HA actually needs.
 
 - name: Ensure cluster firewall file exists
   ansible.builtin.shell:
@@ -42,9 +41,7 @@
       log_level_out: nolog
 
       [RULES]
-      # ============================================
       # INBOUND RULES - Restrictive by default
-      # ============================================
 
       # Home Assistant Web Interface (required)
       IN ACCEPT -p tcp -dport {{ haos_web_port }} -log nolog
@@ -90,9 +87,7 @@
       # Drop and log all other inbound traffic
       IN DROP -log warning
 
-      # ============================================
       # OUTBOUND RULES - More permissive for integrations
-      # ============================================
 
       # Allow all outbound (needed for cloud integrations, updates, etc.)
       OUT ACCEPT -log nolog

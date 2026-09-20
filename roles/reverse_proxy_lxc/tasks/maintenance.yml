@@ -1,6 +1,4 @@
 ---
-# Configure unattended upgrades and maintenance tasks
-
 - name: Install unattended-upgrades
   ansible.builtin.command:
     cmd: "pct exec {{ reverse_proxy_vmid }} -- apt-get install -y unattended-upgrades apt-listchanges"

@@ -1,15 +1,6 @@
 ---
-# Always-on container registry LXC.
-#
-# Runs the upstream CNCF distribution registry as a plain systemd service
-# (no Docker): a single idle Go binary adds ~zero wakeups, which keeps the
-# host's deep package C-states intact — the reason this is NOT another
-# docker-in-LXC guest. Image data lives on the big ZFS array (mediapool)
-# via a bind mount.
-#
-# Access model: port 5000 (HTTPS + htpasswd) is reachable ONLY from the
-# reverse proxy; every client (CI, dev VM, production VPS, Renovate) uses
-# https://registry.lukas-roth.dev through nginx (TLS + basic auth + GeoIP).
+# Plain systemd service, not Docker: one idle Go binary adds ~zero wakeups and
+# keeps the host's deep C-states. :5000 is reachable only from the reverse proxy.
 
 registry_lxc_vmid: 106
 registry_lxc_hostname: registry
@@ -31,9 +22,7 @@ registry_lxc_unprivileged: true
 
 registry_lxc_ssh_port: 22
 
-# Image blobs on the big array. recordsize=1M suits large sequential layer
-# blobs. Container uid 1000 maps to host 101000 (default unprivileged offset,
-# no custom idmap needed).
+# recordsize=1M suits large sequential layer blobs; uid 1000 maps to host 101000.
 registry_lxc_dataset: "mediapool/registry"
 registry_lxc_data_source: "/mediapool/registry/data"
 registry_lxc_data_mp: "/var/lib/registry"
@@ -48,21 +37,18 @@ registry_lxc_port: 5000
 registry_lxc_user: registry
 registry_lxc_user_uid: 1000
 
-# htpasswd content (bcrypt REQUIRED — distribution v3 rejects apr1/MD5).
-# Single source of truth shared with the nginx vhost: nginx forwards the
-# Authorization header, so both layers validate the same credentials.
-registry_lxc_htpasswd: "{{ vault_reverse_proxy_auth_basic_users.registry }}"
+# bcrypt REQUIRED (v3 rejects apr1/MD5). nginx forwards the Authorization header,
+# so this file and the vhost's must hold the same credentials.
+registry_lxc_htpasswd: "{{ secret_reverse_proxy_auth_basic_users.registry }}"
 
-# Plaintext credentials for the local retention script (user:password).
-# Same account the htpasswd hash was generated from.
-registry_lxc_retention_credentials: "{{ vault_registry_retention_credentials }}"
+# Plaintext for the retention script; same account as the htpasswd hash above.
+registry_lxc_retention_credentials: "{{ secret_registry_retention_credentials }}"
 
 # Only the reverse proxy may reach :5000.
 registry_lxc_allowed_5000_sources:
   - "192.168.178.4"
 
-# Retention: keep latest/non-SHA tags + newest N 40-hex SHA tags per repo,
-# then garbage-collect. Weekly, Sunday 05:30 (mirrors the old ci_runner cron).
+# Keep non-SHA tags plus the newest N SHA tags per repo, then garbage-collect.
 registry_lxc_retention_keep_tags: 5
 registry_lxc_retention_cron_minute: "30"
 registry_lxc_retention_cron_hour: "5"

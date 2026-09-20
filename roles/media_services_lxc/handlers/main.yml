@@ -1,6 +1,4 @@
 ---
-# Handlers for media_services_vm role
-
 - name: Restart Docker
   ansible.builtin.systemd:
     name: docker

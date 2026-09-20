@@ -12,8 +12,7 @@ ExecStart=/usr/local/bin/registry serve /etc/registry/config.yml
 Restart=on-failure
 RestartSec=5
 
-# Sandbox: the service only ever needs to read /etc/registry and write the
-# data directory. Strictly stronger than the docker flags it replaces.
+# The service only reads /etc/registry and writes the data directory.
 NoNewPrivileges=yes
 ProtectSystem=strict
 ReadWritePaths={{ registry_lxc_data_mp }}

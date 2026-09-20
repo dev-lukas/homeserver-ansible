@@ -1,0 +1,107 @@
+---
+# RTL8127 uplink NIC, kernel-native ASPM. Requires the hidden BIOS "Native ASPM"
+# = Enabled (Setup EC87D643-EBA4-4BB5-A1E5-3F3E36B20DA9 @0x51); Auto breaks it.
+
+- name: Install nic-aspm helper (kernel-native ASPM policy)
+  ansible.builtin.copy:
+    src: nic-aspm.sh
+    dest: /usr/local/sbin/nic-aspm.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Remove legacy autoaspm.py (setpci era, replaced by nic-aspm.sh)
+  ansible.builtin.file:
+    path: /usr/local/sbin/autoaspm.py
+    state: absent
+
+- name: Remove legacy autoaspm cron jobs
+  ansible.builtin.cron:
+    name: "{{ item }}"
+    user: root
+    state: absent
+  loop:
+    - "Realtek RTL8127 ASPM"
+    - "Realtek RTL8127 ASPM re-assert"
+
+- name: Configure nic-aspm cron job on reboot
+  ansible.builtin.cron:
+    name: "RTL8127 NIC power management"
+    special_time: reboot
+    job: "(sleep 15 && /usr/local/sbin/nic-aspm.sh)"
+    user: root
+    state: present
+
+# Belt-and-suspenders: the sysfs settings are kernel-tracked and survive AER
+# recovery. Re-pins power/control and fails loudly if the BIOS retakes ASPM.
+- name: Configure nic-aspm re-assert cron job
+  ansible.builtin.cron:
+    name: "RTL8127 NIC PM re-assert"
+    minute: "*/5"
+    job: "/usr/local/sbin/nic-aspm.sh > /dev/null 2>&1"
+    user: root
+    state: present
+
+# Any RTL8127-family card in any slot comes up as nic0 (matched by driver, not
+# MAC/path), so /etc/network/interfaces can hard-code "bridge-ports nic0".
+- name: Install driver-matched uplink naming rule (nic0)
+  ansible.builtin.copy:
+    src: 50-nic0.link
+    dest: /etc/systemd/network/50-nic0.link
+    owner: root
+    group: root
+    mode: "0644"
+
+# Per-revision driver policy: rev 05 RJ45 -> r8169, rev 08 ATF -> vendor r8127
+# only when an r8127.ko exists for the running kernel. Never leaves it driverless.
+- name: Install r8127-bind policy script
+  ansible.builtin.copy:
+    src: r8127-bind.sh
+    dest: /usr/local/sbin/r8127-bind.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install r8127-bind service unit
+  ansible.builtin.copy:
+    src: r8127-bind.service
+    dest: /etc/systemd/system/r8127-bind.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: r8127_bind_unit
+
+- name: Enable r8127-bind service
+  ansible.builtin.systemd:
+    name: r8127-bind.service
+    enabled: true
+    daemon_reload: "{{ r8127_bind_unit.changed }}"
+
+# Sub-second LTR storm healing; the */5 nic-aspm cron is the slow backstop.
+- name: Install AER instant-heal script
+  ansible.builtin.copy:
+    src: aer-ltr-heal.sh
+    dest: /usr/local/sbin/aer-ltr-heal.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install AER instant-heal service unit
+  ansible.builtin.copy:
+    src: aer-ltr-heal.service
+    dest: /etc/systemd/system/aer-ltr-heal.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: aer_heal_unit
+
+- name: Enable and start AER instant-heal service
+  ansible.builtin.systemd:
+    name: aer-ltr-heal.service
+    enabled: true
+    state: started
+    daemon_reload: "{{ aer_heal_unit.changed }}"
+
+- name: Run nic-aspm now
+  ansible.builtin.command: /usr/local/sbin/nic-aspm.sh
+  changed_when: false
