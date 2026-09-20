@@ -147,14 +147,23 @@
       {% endif %}{% endfor %}
   no_log: true
 
+# pct exec/push sometimes die with rc 129 on a healthy container; both are idempotent.
 - name: Ensure /root/.ssh exists in container
   ansible.builtin.command:
     cmd: "pct exec {{ media_lxc_vmid }} -- install -d -m 700 /root/.ssh"
+  register: media_lxc_ssh_dir
+  until: media_lxc_ssh_dir.rc == 0
+  retries: 3
+  delay: 2
   changed_when: false
 
 - name: Push authorized_keys into container
   ansible.builtin.command:
     cmd: "pct push {{ media_lxc_vmid }} /tmp/media_lxc_authorized_keys /root/.ssh/authorized_keys --perms 600"
+  register: media_lxc_keys_push
+  until: media_lxc_keys_push.rc == 0
+  retries: 3
+  delay: 2
   changed_when: false
 
 - name: Remove temp authorized_keys file
