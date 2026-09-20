@@ -9,7 +9,7 @@ ci_runner_autostart_github_user: "{{ ci_runner_github_user | default('dev-lukas'
 ci_runner_autostart_repos: "{{ ci_runner_repos | default([]) }}"
 
 # Fine-grained PAT with Actions: read on the repos (reuses the runner's PAT).
-ci_runner_autostart_pat: "{{ vault_github_runner_pat }}"
+ci_runner_autostart_pat: "{{ secret_github_runner_pat }}"
 
 ci_runner_autostart_interval_sec: 90
 ci_runner_autostart_idle_minutes: 10

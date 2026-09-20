@@ -10,15 +10,8 @@
     glances_venv_path: "{{ hostvars['proxmox-root']['glances_venv_path'] | default('/opt/glances') }}"
     glances_port: "{{ hostvars['proxmox-root']['glances_port'] | default(61208) }}"
   pre_tasks:
-    - name: Write deploy key to temp file
-      ansible.builtin.copy:
-        content: "{{ vault_ansible_deploy_private_key }}"
-        dest: /tmp/.ansible_deploy_key
-        mode: "0600"
-      delegate_to: localhost
-      become: false
-      run_once: true
-      no_log: true
+    - name: Verify Proton Pass session and SSH agent on the controller
+      ansible.builtin.include_tasks: tasks/secrets_preflight.yml
       tags: always
 
   tasks:
@@ -335,8 +328,7 @@
   vars:
     apps_ip: "192.168.178.15"
     stacks_dir: "/opt/stacks"
-    ssh_key_path: "/tmp/.ansible_deploy_key"
-    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ssh_key_path }}"
+    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
     immich_web_port: 2283
     # Immich rides the floating `release` tag, so pull+up is the app update.
     apps_stacks:
@@ -345,14 +337,6 @@
       - vert
       - mealie
       - homepage
-
-  pre_tasks:
-    - name: Write deploy key to temp file on Proxmox
-      ansible.builtin.copy:
-        content: "{{ vault_ansible_deploy_private_key }}"
-        dest: "{{ ssh_key_path }}"
-        mode: "0600"
-      no_log: true
 
   tasks:
     - name: Run hardened apt maintenance
@@ -392,20 +376,6 @@
           Docker stacks recreated: {{ apps_stacks | join(', ') }}
           Pruned: {{ prune_result.stdout_lines[-1] | default('Done') }}
 
-  post_tasks:
-    - name: Remove deploy key from Proxmox
-      ansible.builtin.file:
-        path: "{{ ssh_key_path }}"
-        state: absent
-
-    - name: Remove local deploy key
-      ansible.builtin.file:
-        path: /tmp/.ansible_deploy_key
-        state: absent
-      delegate_to: localhost
-      become: false
-      run_once: true
-      tags: always
 
 - name: Maintenance - Media Services VM
   hosts: proxmox-root
@@ -414,8 +384,7 @@
   vars:
     media_services_ip: "{{ hostvars['proxmox-root']['media_services_ip'] | default('192.168.178.11') }}"
     stacks_dir: "/opt/stacks"
-    ssh_key_path: "/tmp/.ansible_deploy_key"
-    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ssh_key_path }}"
+    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
     # Stacks that have their own network
     media_services_standalone_stacks:
       - sonarr
@@ -428,14 +397,6 @@
       - sabnzbd
       - qbittorrent
       - umlautadaptarr
-
-  pre_tasks:
-    - name: Write deploy key to temp file on Proxmox
-      ansible.builtin.copy:
-        content: "{{ vault_ansible_deploy_private_key }}"
-        dest: "{{ ssh_key_path }}"
-        mode: "0600"
-      no_log: true
 
   tasks:
     - name: Run hardened apt maintenance
@@ -487,20 +448,6 @@
           Packages upgraded: {{ maint_apt.changed }}
           Pruned: {{ prune_result.stdout_lines[-1] | default('Done') }}
 
-  post_tasks:
-    - name: Remove deploy key from Proxmox
-      ansible.builtin.file:
-        path: "{{ ssh_key_path }}"
-        state: absent
-
-    - name: Remove local deploy key
-      ansible.builtin.file:
-        path: /tmp/.ansible_deploy_key
-        state: absent
-      delegate_to: localhost
-      become: false
-      run_once: true
-      tags: always
 
 - name: Maintenance - Development VM
   hosts: proxmox-root
@@ -508,16 +455,7 @@
   tags: [dev_vm, maintenance]
   vars:
     dev_vm_ip: "{{ hostvars['proxmox-root']['dev_vm_ip'] | default('192.168.178.12') }}"
-    ssh_key_path: "/tmp/.ansible_deploy_key"
-    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ssh_key_path }}"
-
-  pre_tasks:
-    - name: Write deploy key to temp file on Proxmox
-      ansible.builtin.copy:
-        content: "{{ vault_ansible_deploy_private_key }}"
-        dest: "{{ ssh_key_path }}"
-        mode: "0600"
-      no_log: true
+    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
   tasks:
     - name: Run hardened apt maintenance
@@ -542,20 +480,6 @@
           Packages upgraded: {{ maint_apt.changed }}
           Claude Code: {{ claude_update.stdout | default('update attempted') }}
 
-  post_tasks:
-    - name: Remove deploy key from Proxmox
-      ansible.builtin.file:
-        path: "{{ ssh_key_path }}"
-        state: absent
-
-    - name: Remove local deploy key
-      ansible.builtin.file:
-        path: /tmp/.ansible_deploy_key
-        state: absent
-      delegate_to: localhost
-      become: false
-      run_once: true
-      tags: always
 
 - name: Maintenance - CI Runner VM
   hosts: proxmox-root
@@ -564,16 +488,7 @@
   vars:
     ci_runner_ip: "{{ hostvars['proxmox-root']['ci_runner_ip'] | default('192.168.178.13') }}"
     ci_runner_vmid: "{{ hostvars['proxmox-root']['ci_runner_vmid'] | default(108) }}"
-    ssh_key_path: "/tmp/.ansible_deploy_key"
-    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ssh_key_path }}"
-
-  pre_tasks:
-    - name: Write deploy key to temp file on Proxmox
-      ansible.builtin.copy:
-        content: "{{ vault_ansible_deploy_private_key }}"
-        dest: "{{ ssh_key_path }}"
-        mode: "0600"
-      no_log: true
+    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
   tasks:
     # The CI VM is on-demand (onboot 0); shut it down again if we started it.
@@ -635,20 +550,6 @@
       when: "'running' not in ci_vm_status.stdout"
       changed_when: true
 
-  post_tasks:
-    - name: Remove deploy key from Proxmox
-      ansible.builtin.file:
-        path: "{{ ssh_key_path }}"
-        state: absent
-
-    - name: Remove local deploy key
-      ansible.builtin.file:
-        path: /tmp/.ansible_deploy_key
-        state: absent
-      delegate_to: localhost
-      become: false
-      run_once: true
-      tags: always
 
 - name: Maintenance - Summary
   hosts: proxmox-root

@@ -7,6 +7,15 @@
     state: directory
     mode: "0755"
 
+- name: Deploy Umlautadaptarr environment file
+  ansible.builtin.copy:
+    dest: "{{ media_services_stacks_dir }}/umlautadaptarr/.env"
+    content: |
+      SONARR_API_KEY={{ secret_sonarr_api_key | default('APIKEY') }}
+      RADARR_API_KEY={{ secret_radarr_api_key | default('APIKEY') }}
+    mode: "0600"
+  no_log: true
+
 - name: Deploy Umlautadaptarr docker-compose.yml
   ansible.builtin.copy:
     dest: "{{ media_services_stacks_dir }}/umlautadaptarr/docker-compose.yml"
@@ -23,11 +32,11 @@
             # Sonarr - must be enabled for umlautadaptarr to work
             - SONARR__ENABLED=true
             - SONARR__HOST=http://{{ media_services_ip }}:8989
-            - SONARR__APIKEY={{ vault_sonarr_api_key | default('APIKEY') }}
+            - SONARR__APIKEY=${SONARR_API_KEY}
             # Radarr
             - RADARR__ENABLED=true
             - RADARR__HOST=http://{{ media_services_ip }}:7878
-            - RADARR__APIKEY={{ vault_radarr_api_key | default('APIKEY') }}
+            - RADARR__APIKEY=${RADARR_API_KEY}
             # Readarr
             - READARR__ENABLED=false
             - READARR__HOST=http://localhost:8787

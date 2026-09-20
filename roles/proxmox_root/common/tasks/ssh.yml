@@ -18,7 +18,7 @@
 - name: Test SSH key authentication works
   ansible.builtin.command:
     cmd: >-
-      ssh -i /tmp/.ansible_deploy_key
+      ssh
       -o StrictHostKeyChecking=no
       -o UserKnownHostsFile=/dev/null
       -o PasswordAuthentication=no

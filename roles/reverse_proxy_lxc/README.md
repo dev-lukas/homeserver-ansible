@@ -14,23 +14,23 @@ This Ansible role deploys a highly secure reverse proxy on a Proxmox LXC contain
 
 ## Requirements
 
-### Vault Variables (Required)
+### Secrets (Required)
 
-Add these to your vault file:
+Provided by `inventory/group_vars/proxmox/secrets.yml` from Proton Pass:
 
 ```yaml
 # Hetzner DNS API Token (required for Let's Encrypt)
-vault_hetzner_api_token: "your-hetzner-dns-api-token"
+secret_hetzner_api_token: "your-hetzner-dns-api-token"
 
 # MaxMind GeoIP (optional but recommended)
-vault_maxmind_account_id: "your-account-id"
-vault_maxmind_license_key: "your-license-key"
+secret_maxmind_account_id: "your-account-id"
+secret_maxmind_license_key: "your-license-key"
 
 # CrowdSec Console (optional)
-vault_crowdsec_enroll_key: "your-enrollment-key"
+secret_crowdsec_enroll_key: "your-enrollment-key"
 
 # Optional per-backend htpasswd content
-vault_reverse_proxy_auth_basic_users:
+secret_reverse_proxy_auth_basic_users:
   registry: |
     registry:$2y$05$replace-with-htpasswd-output
 ```

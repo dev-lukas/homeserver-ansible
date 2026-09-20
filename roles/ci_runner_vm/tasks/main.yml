@@ -120,7 +120,7 @@
 - name: Write all SSH public keys to temp file for cloud-init
   ansible.builtin.copy:
     content: |
-      {{ vault_ansible_deploy_public_key }}
+      {{ secret_ansible_deploy_public_key }}
       {% for key in ssh_authorized_keys %}{% if key is string %}{{ key }}
       {% endif %}{% endfor %}
     dest: /tmp/vm_ssh_keys.pub
@@ -177,7 +177,6 @@
     name: "{{ ci_runner_hostname }}"
     ansible_host: "{{ ci_runner_ip }}"
     ansible_user: root
-    ansible_ssh_private_key_file: /tmp/.ansible_deploy_key
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
     groups: ci_runner_target
   tags:

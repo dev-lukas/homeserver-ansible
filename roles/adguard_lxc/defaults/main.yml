@@ -22,7 +22,7 @@ adguard_nesting: false
 
 adguard_configure_firewall: true
 
-# Hash: htpasswd -nbB "" "yourpassword" | cut -d: -f2 (credentials belong in vault).
-adguard_admin_user: "{{ vault_adguard_admin_user | default('admin') }}"
-adguard_admin_password_hash: "{{ vault_adguard_admin_password_hash }}"
-adguard_admin_password: "{{ vault_adguard_admin_password }}"
+# Hash: htpasswd -nbB "" "yourpassword" | cut -d: -f2 (credentials come from Proton Pass).
+adguard_admin_user: "{{ secret_adguard_admin_user | default('admin') }}"
+adguard_admin_password_hash: "{{ secret_adguard_admin_password_hash }}"
+adguard_admin_password: "{{ secret_adguard_admin_password }}"

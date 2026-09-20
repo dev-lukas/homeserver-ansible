@@ -1,5 +1,5 @@
 ---
-# Override in vault.
+# Override via Proton Pass (see secrets.yml) before relying on it.
 ups_monitor_password: "changeme"
 
 ups_shutdown_battery_percent: 25

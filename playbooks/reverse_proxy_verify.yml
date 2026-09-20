@@ -1,20 +1,13 @@
 ---
-# Reverse proxy verification; run standalone with --ask-vault-pass.
+# Reverse proxy verification; runs standalone.
 
 - name: Verify Reverse Proxy and safety mechanisms
   hosts: proxmox-root
   gather_facts: false
   tags: [reverse_proxy, verify, maintenance]
   pre_tasks:
-    - name: Write deploy key to temp file
-      ansible.builtin.copy:
-        content: "{{ vault_ansible_deploy_private_key }}"
-        dest: /tmp/.ansible_deploy_key
-        mode: "0600"
-      delegate_to: localhost
-      become: false
-      run_once: true
-      no_log: true
+    - name: Verify Proton Pass session and SSH agent on the controller
+      ansible.builtin.include_tasks: tasks/secrets_preflight.yml
       tags: always
 
   vars:
@@ -287,13 +280,3 @@
           - Backend vhost access-policy snippets
           - HTTPS vhost health endpoints
           - Backend network reachability
-
-  post_tasks:
-    - name: Remove local deploy key
-      ansible.builtin.file:
-        path: /tmp/.ansible_deploy_key
-        state: absent
-      delegate_to: localhost
-      become: false
-      run_once: true
-      tags: always

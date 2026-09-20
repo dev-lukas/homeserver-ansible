@@ -39,10 +39,10 @@ registry_lxc_user_uid: 1000
 
 # bcrypt REQUIRED (v3 rejects apr1/MD5). nginx forwards the Authorization header,
 # so this file and the vhost's must hold the same credentials.
-registry_lxc_htpasswd: "{{ vault_reverse_proxy_auth_basic_users.registry }}"
+registry_lxc_htpasswd: "{{ secret_reverse_proxy_auth_basic_users.registry }}"
 
 # Plaintext for the retention script; same account as the htpasswd hash above.
-registry_lxc_retention_credentials: "{{ vault_registry_retention_credentials }}"
+registry_lxc_retention_credentials: "{{ secret_registry_retention_credentials }}"
 
 # Only the reverse proxy may reach :5000.
 registry_lxc_allowed_5000_sources:

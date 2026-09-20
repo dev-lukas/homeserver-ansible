@@ -4,9 +4,9 @@
 - name: Validate Immich database password is configured
   ansible.builtin.assert:
     that:
-      - vault_immich_db_password is defined
-      - vault_immich_db_password | length > 0
-    fail_msg: "vault_immich_db_password must be set for Immich."
+      - secret_immich_db_password is defined
+      - secret_immich_db_password | length > 0
+    fail_msg: "secret_immich_db_password must be set for Immich."
   no_log: true
 
 - name: Ensure Immich library mount is active before deploying
@@ -32,7 +32,7 @@
       DB_DATA_LOCATION={{ immich_db_data_location }}
       TZ={{ immich_timezone }}
       IMMICH_VERSION={{ immich_version }}
-      DB_PASSWORD={{ vault_immich_db_password }}
+      DB_PASSWORD={{ secret_immich_db_password }}
       DB_USERNAME={{ immich_db_username }}
       DB_DATABASE_NAME={{ immich_db_name }}
   no_log: true

@@ -7,6 +7,15 @@
     state: directory
     mode: "0755"
 
+- name: Deploy Gluetun environment file
+  ansible.builtin.copy:
+    dest: "{{ media_services_stacks_dir }}/gluetun/.env"
+    content: |
+      WIREGUARD_PRIVATE_KEY={{ secret_protonvpn_wireguard_private_key }}
+      WIREGUARD_ADDRESSES={{ secret_protonvpn_wireguard_addresses | default('10.2.0.2/32') }}
+    mode: "0600"
+  no_log: true
+
 - name: Deploy Gluetun docker-compose.yml
   ansible.builtin.copy:
     dest: "{{ media_services_stacks_dir }}/gluetun/docker-compose.yml"
@@ -24,8 +33,8 @@
             # Use custom provider for fixed endpoint
             - VPN_SERVICE_PROVIDER=custom
             - VPN_TYPE=wireguard
-            - WIREGUARD_PRIVATE_KEY={{ vault_protonvpn_wireguard_private_key }}
-            - WIREGUARD_ADDRESSES={{ vault_protonvpn_wireguard_addresses | default('10.2.0.2/32') }}
+            - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+            - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES}
             # Fixed endpoint ProtonVPN CH#609
             - WIREGUARD_PUBLIC_KEY=Ii6hAbnu84wZ8NzVt5+ylO4FnX+ANrKNzpFOSYq9dks=
             - WIREGUARD_ENDPOINT_IP=79.127.184.216

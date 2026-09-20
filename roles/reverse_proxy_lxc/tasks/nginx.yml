@@ -24,8 +24,10 @@
       LicenseKey {{ reverse_proxy_maxmind_license_key }}
       EditionIDs GeoLite2-Country GeoLite2-City
       DatabaseDirectory {{ reverse_proxy_geoip_db_path }}
-      EOF'
+      EOF
+      chmod 600 /etc/GeoIP.conf'
   changed_when: false
+  no_log: true
   when: reverse_proxy_maxmind_account_id | length > 0 and reverse_proxy_maxmind_license_key | length > 0
 
 - name: Run initial GeoIP database update

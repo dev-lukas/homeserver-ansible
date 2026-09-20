@@ -1,10 +1,5 @@
 # Ansible
 *.retry
-inventory/host_vars/*/vault.yml
-
-# Secrets
-*.vault
-secrets/
 
 # Python
 __pycache__/

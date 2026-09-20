@@ -56,7 +56,7 @@ it when it creates one; if it is lost, remove the token and re-run the play:
 
 ```bash
 pveum user token remove hass@pve dev-vm
-ansible-playbook playbooks/proxmox.yml --tags ha_vm_control --ask-vault-pass
+ansible-playbook playbooks/proxmox.yml --tags ha_vm_control
 ```
 
 ## Home Assistant configuration

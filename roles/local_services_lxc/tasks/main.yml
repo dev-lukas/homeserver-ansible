@@ -132,7 +132,7 @@
     dest: /tmp/apps_lxc_authorized_keys
     mode: "0644"
     content: |
-      {{ vault_ansible_deploy_public_key }}
+      {{ secret_ansible_deploy_public_key }}
       {{ apps_lxc_pve_root_pubkey.content | b64decode | trim }}
       {% for key in ssh_authorized_keys | default([]) %}{% if key is string %}{{ key }}
       {% endif %}{% endfor %}
@@ -180,7 +180,6 @@
     name: "{{ apps_lxc_hostname }}"
     ansible_host: "{{ apps_lxc_ip }}"
     ansible_user: root
-    ansible_ssh_private_key_file: /tmp/.ansible_deploy_key
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30"
     ansible_ssh_retries: 3
     groups: apps_lxc_target

@@ -101,7 +101,7 @@
     url: "https://api.github.com/repos/{{ ci_runner_github_user }}/{{ item }}/actions/runners/registration-token"
     method: POST
     headers:
-      Authorization: "Bearer {{ vault_github_runner_pat }}"
+      Authorization: "Bearer {{ secret_github_runner_pat }}"
       Accept: "application/vnd.github+json"
     status_code: 201
   loop: "{{ runners_to_register | default([]) }}"

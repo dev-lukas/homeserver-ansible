@@ -90,7 +90,6 @@
     name: "local-services-ecc"
     ansible_host: "{{ apps_lxc_ip }}"
     ansible_user: root
-    ansible_ssh_private_key_file: /tmp/.ansible_deploy_key
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
   when: vm_reachable.state is defined and vm_reachable.state == "started"
 

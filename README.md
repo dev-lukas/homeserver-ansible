@@ -46,6 +46,81 @@ Ansible configuration for managing Proxmox homeserver infrastructure.
 
 1. Edit `inventory/hosts.yml` and set your Proxmox server IP
 2. Edit `inventory/group_vars/all.yml` and add your SSH public key
+3. Set up Proton Pass on the controller (next section)
+
+## Secrets
+
+Nothing secret is stored in this repository. Every credential is fetched at
+run time from Proton Pass through [pass-cli](https://protonpass.github.io/pass-cli/)
+and the `proton_pass` lookup (see `inventory/group_vars/proxmox/secrets.yml`
+for the full list). The lookup is vendored in `plugins/lookup/` from
+community.general main until a release ships the pass-cli 2.3 fix. SSH keys are
+served by the Proton Pass SSH agent, so no private key touches the disk of
+the controller or of Proxmox.
+
+### Controller setup (once)
+
+```bash
+curl -fsSL https://proton.me/download/pass-cli/install.sh | bash   # installs ~/.local/bin/pass-cli
+pass-cli login                                                     # web login, session persists
+```
+
+Then run the agent as a service, scoped to the `ssh-keys` vault:
+
+```ini
+# /etc/systemd/system/proton-pass-ssh-agent.service
+[Unit]
+Description=Proton Pass SSH agent
+After=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/pass-cli ssh-agent start --vault-name ssh-keys --socket-path %h/.ssh/proton-pass-agent.sock
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+systemctl enable --now proton-pass-ssh-agent
+echo 'export SSH_AUTH_SOCK="$HOME/.ssh/proton-pass-agent.sock"' >> ~/.bashrc   # for plain ssh
+```
+
+`ansible.cfg` points ssh at that socket and forwards the agent, so the
+maintenance plays can ssh from Proxmox into guests without a key file. Every
+playbook starts with `playbooks/tasks/secrets_preflight.yml`, which fails
+early if the session or the agent socket is missing.
+
+### Layout in Proton Pass
+
+| Vault       | Item                       | Fields                                   |
+|-------------|----------------------------|------------------------------------------|
+| `ssh-keys`  | `ansible-deploy` (SSH Key) | `private_key`, `public_key`              |
+| `homeserver`| `github-runner`            | `pat`                                    |
+| `homeserver`| `hetzner-dns`              | `api_token`                              |
+| `homeserver`| `maxmind`                  | `account_id`, `license_key`              |
+| `homeserver`| `crowdsec`                 | `enroll_key`                             |
+| `homeserver`| `reverse-proxy-basic-auth` | one hidden field per backend (htpasswd)  |
+| `homeserver`| `registry-retention`       | `credentials`                            |
+| `homeserver`| `immich`                   | `db_password`                            |
+| `homeserver`| `adguard` (Login)          | `username`, `password`, `password_hash`  |
+| `homeserver`| `sonarr`, `radarr`, `sonarr-anime`, `radarr-anime` | `api_key`      |
+| `homeserver`| `protonvpn-wireguard`      | `private_key`, `addresses`               |
+| `homeserver`| `ups`                      | `monitor_password`                       |
+| `homeserver`| `proxmox` (Login)          | root password, used manually for `--ask-pass` |
+
+Secrets go in as *hidden* custom fields whose names match the table. Adding a
+secret means adding a field in Proton Pass and one lookup line in
+`secrets.yml`.
+
+### Bootstrapping a fresh Proxmox host
+
+Before the deploy key is authorized, connect with the root password instead:
+
+```bash
+ansible-playbook playbooks/proxmox.yml --ask-pass --tags ssh
+```
 
 ## Usage
 
@@ -61,7 +136,7 @@ ansible-playbook playbooks/proxmox.yml
 
 ### Verify reverse proxy and safety mechanisms
 ```bash
-ansible-playbook playbooks/reverse_proxy_verify.yml --ask-vault-pass
+ansible-playbook playbooks/reverse_proxy_verify.yml
 ```
 
 ### Run with specific tags
@@ -106,9 +181,9 @@ roles/
 Run the full fleet update (Proxmox host + all LXCs/VMs):
 
 ```bash
-ansible-playbook playbooks/maintenance.yml --ask-vault-pass
+ansible-playbook playbooks/maintenance.yml
 # Target a single component via tags, e.g.:
-ansible-playbook playbooks/maintenance.yml --ask-vault-pass --tags media_services
+ansible-playbook playbooks/maintenance.yml --tags media_services
 ```
 
 ### Upgrade reliability

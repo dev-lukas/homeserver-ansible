@@ -84,6 +84,7 @@
   ansible.builtin.command:
     cmd: "pct exec {{ reverse_proxy_vmid }} -- cscli console enroll {{ reverse_proxy_crowdsec_enroll_key }}"
   changed_when: false
+  no_log: true
   failed_when: false
   when: reverse_proxy_crowdsec_enroll_key | length > 0
 
