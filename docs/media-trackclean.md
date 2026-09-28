@@ -50,9 +50,18 @@ suffix itself cannot be turned off in Jellyfin.
 
 ## Rollout of the existing library
 
-State on 2026-09-28 (dry run): 2,369 MKVs, ~1,334 remux (8.1 TB) and
-~800 flag-only edits. No hardlinks to downloads, so nothing seeding is hit.
-Remux runs at ~500 MB/s on the SSD pool, about 4.5 h in total.
+Done on 2026-09-28 in two waves: 2,132 of 2,369 MKVs changed (1,334 remuxed,
+8.1 TB), the rest already clean. Remux ran at ~500 MB/s on the SSD pool.
+Left untouched on purpose: Game of Thrones S05 (DON DoVi release; mkvmerge
+v99 splits 392 blocks into duplicate timestamps, so the frame check refuses).
+
+Lessons from that run:
+- Never run parallel read scans on mediapool next to a remux. A 6-way ffprobe
+  check pushed the ARC 15 GB past its cap within a minute and the host OOM
+  killer took the dev VM (see `proxmox_root/memory_guard`). Verify afterwards,
+  single-threaded, once the *arr rescans are done.
+- Snapshots are cumulative, so the wave snapshot has to be destroyed before
+  the next wave starts; only then is the space free again.
 
 1. Deploy: `ansible-playbook playbooks/proxmox.yml --tags media_lxc`.
 2. Dry run per instance (inside the container, as `abc`):
