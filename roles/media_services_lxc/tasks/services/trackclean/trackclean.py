@@ -407,10 +407,24 @@ def verify(src, out, tracks, plan):
     got = {k: sum(1 for t in after.get("tracks", []) if t.get("type") == k) for k in want}
     if got != want:
         raise RuntimeError(f"verification failed: tracks {got} != {want}")
-    d0 = before.get("container", {}).get("properties", {}).get("duration")
+    # Dropped tracks may run past the video, so compare with the kept tracks when their
+    # statistics tags carry a duration, else with the source container.
+    kept = {t.id for t in tracks if t.type == "video"} | set(plan.keep)
+    spans = [_seconds(t["properties"].get("tag_duration")) for t in before.get("tracks", [])
+             if t["id"] in kept]
+    d0 = max((s for s in spans if s), default=0) * 1e9 or \
+        before.get("container", {}).get("properties", {}).get("duration")
     d1 = after.get("container", {}).get("properties", {}).get("duration")
     if d0 and d1 and abs(d0 - d1) > 2e9:
         raise RuntimeError(f"verification failed: duration {d1 / 1e9:.1f}s != {d0 / 1e9:.1f}s")
+
+
+def _seconds(hms):
+    try:
+        h, m, s = (hms or "").split(":")
+        return int(h) * 3600 + int(m) * 60 + float(s)
+    except ValueError:
+        return 0
 
 
 def setup_logging(stderr=True):
