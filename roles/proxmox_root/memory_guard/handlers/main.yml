@@ -1,0 +1,7 @@
+---
+# Root is on ZFS, so module options come from the initramfs; the
+# proxmox-boot-sync hook copies it onto both ESPs.
+- name: Update initramfs
+  ansible.builtin.command:
+    cmd: update-initramfs -u -k all
+  changed_when: true

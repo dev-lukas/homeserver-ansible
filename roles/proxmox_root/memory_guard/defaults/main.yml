@@ -1,0 +1,15 @@
+---
+# ZFS ARC cap in bytes; was set by hand in /etc/modprobe.d/zfs.conf before.
+memory_guard_zfs_arc_max: 6700400640
+
+# The ARC starts evicting once free memory drops below this (default ~2.2 GiB).
+# Raised after the 2026-09-28 OOM, where the ARC overshot its cap within a minute.
+memory_guard_zfs_arc_sys_free: 8589934592
+
+# VMs whose QEMU process the OOM killer must never pick (Home Assistant).
+memory_guard_oom_protected_vms:
+  - 101
+
+# Proxmox only runs hookscripts from a storage with "snippets" content.
+memory_guard_snippets_storage: local
+memory_guard_snippets_dir: /var/lib/vz/snippets

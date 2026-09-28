@@ -1,0 +1,70 @@
+---
+# Host memory safety: ZFS ARC limits, and OOM protection for critical VMs.
+
+- name: Persist ZFS ARC limits via modprobe.d
+  ansible.builtin.copy:
+    dest: /etc/modprobe.d/zfs.conf
+    content: |
+      options zfs zfs_arc_max={{ memory_guard_zfs_arc_max }}
+      options zfs zfs_arc_sys_free={{ memory_guard_zfs_arc_sys_free }}
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Update initramfs
+
+- name: Apply ZFS ARC limits at runtime
+  ansible.builtin.shell: |
+    for p in zfs_arc_sys_free={{ memory_guard_zfs_arc_sys_free }} zfs_arc_max={{ memory_guard_zfs_arc_max }}; do
+      f=/sys/module/zfs/parameters/${p%%=*}
+      if [ "$(cat $f)" != "${p#*=}" ]; then echo "${p#*=}" > $f; echo "CHANGED ${p%%=*}"; fi
+    done
+  register: memory_guard_arc_apply
+  changed_when: "'CHANGED' in memory_guard_arc_apply.stdout"
+
+- name: Allow hookscripts on the snippets storage
+  ansible.builtin.shell: |
+    set -o pipefail
+    storage={{ memory_guard_snippets_storage }}
+    content=$(pvesh get "/storage/$storage" --output-format json \
+      | python3 -c 'import json, sys; print(json.load(sys.stdin)["content"])')
+    case ",$content," in
+      *,snippets,*) ;;
+      *) pvesm set "$storage" --content "$content,snippets" && echo CHANGED ;;
+    esac
+  args:
+    executable: /bin/bash
+  register: memory_guard_snippets
+  changed_when: "'CHANGED' in memory_guard_snippets.stdout"
+
+- name: Ensure the snippets directory exists
+  ansible.builtin.file:
+    path: "{{ memory_guard_snippets_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy the OOM-protect hookscript
+  ansible.builtin.copy:
+    src: oom-protect.sh
+    dest: "{{ memory_guard_snippets_dir }}/oom-protect.sh"
+    owner: root
+    group: root
+    mode: "0755"
+
+# The hookscript covers future starts; the running process is adjusted directly.
+- name: Protect VMs from the OOM killer
+  ansible.builtin.shell: |
+    cfg=$(qm config {{ item }} 2>/dev/null) || exit 0
+    if ! grep -q '^hookscript: {{ memory_guard_snippets_storage }}:snippets/oom-protect.sh$' <<< "$cfg"; then
+      qm set {{ item }} --hookscript {{ memory_guard_snippets_storage }}:snippets/oom-protect.sh >/dev/null && echo CHANGED hookscript
+    fi
+    pid=$(cat /var/run/qemu-server/{{ item }}.pid 2>/dev/null) || exit 0
+    if [ "$(cat /proc/$pid/oom_score_adj)" != "-1000" ]; then
+      echo -1000 > /proc/$pid/oom_score_adj && echo CHANGED oom_score_adj
+    fi
+  args:
+    executable: /bin/bash
+  loop: "{{ memory_guard_oom_protected_vms }}"
+  register: memory_guard_oom
+  changed_when: "'CHANGED' in memory_guard_oom.stdout"
