@@ -22,7 +22,7 @@ suffix itself cannot be turned off in Jellyfin.
 - **Existing library**: `trackclean.py batch` (dry run unless `--apply`).
   Files that only need flags/titles are edited in place with `mkvpropedit`;
   files losing tracks are remuxed to a hidden `._trackclean.*.tmp` next to
-  the original, verified (track counts, duration) and swapped atomically.
+  the original, verified (track counts, exact video frame count) and swapped atomically.
 - Log: `/config/logs/trackclean.txt` in each *arr config dir.
 
 ## Rules
