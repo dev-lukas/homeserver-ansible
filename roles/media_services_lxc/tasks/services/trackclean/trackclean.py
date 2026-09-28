@@ -17,6 +17,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -407,24 +408,34 @@ def verify(src, out, tracks, plan):
     got = {k: sum(1 for t in after.get("tracks", []) if t.get("type") == k) for k in want}
     if got != want:
         raise RuntimeError(f"verification failed: tracks {got} != {want}")
-    # Dropped tracks may run past the video, so compare with the kept tracks when their
-    # statistics tags carry a duration, else with the source container.
-    kept = {t.id for t in tracks if t.type == "video"} | set(plan.keep)
-    spans = [_seconds(t["properties"].get("tag_duration")) for t in before.get("tracks", [])
-             if t["id"] in kept]
-    d0 = max((s for s in spans if s), default=0) * 1e9 or \
-        before.get("container", {}).get("properties", {}).get("duration")
-    d1 = after.get("container", {}).get("properties", {}).get("duration")
-    if d0 and d1 and abs(d0 - d1) > 2e9:
-        raise RuntimeError(f"verification failed: duration {d1 / 1e9:.1f}s != {d0 / 1e9:.1f}s")
+    # Container durations are unreliable (dropped tracks running past the video, bogus
+    # segment durations), so the video frame count has to match exactly.
+    # mkvextract counts differ from the tags by one, so both sides use the same method.
+    count = any(t.get("type") == "video" and "tag_number_of_frames" not in t.get("properties", {})
+                for t in before.get("tracks", []))
+    f0, f1 = _video_frames(before, src, count), _video_frames(after, out, count)
+    if f0 != f1:
+        raise RuntimeError(f"verification failed: video frames {f1} != {f0}")
 
 
-def _seconds(hms):
-    try:
-        h, m, s = (hms or "").split(":")
-        return int(h) * 3600 + int(m) * 60 + float(s)
-    except ValueError:
-        return 0
+def _video_frames(info, path, count=False):
+    """Frames per video track from the statistics tags, or counted with mkvextract."""
+    frames = []
+    for t in info.get("tracks", []):
+        if t.get("type") != "video":
+            continue
+        n = t.get("properties", {}).get("tag_number_of_frames")
+        if n is None or count:
+            fd, ts = tempfile.mkstemp(prefix="trackclean-", suffix=".txt")
+            os.close(fd)
+            try:
+                run_tool(["mkvextract", "-q", path, "timestamps_v2", f"{t['id']}:{ts}"])
+                with open(ts) as fh:
+                    n = sum(1 for line in fh if line.strip() and not line.startswith("#"))
+            finally:
+                os.remove(ts)
+        frames.append(int(n))
+    return frames
 
 
 def setup_logging(stderr=True):
