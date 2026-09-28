@@ -55,6 +55,11 @@ media_services_sabnzbd_port: 8080
 media_services_qbittorrent_port: 8081
 media_services_umlautadaptarr_port: 5006
 
+# Import-time track cleanup (tasks/services/trackclean/); false turns the
+# *arr import script off again without touching the containers.
+media_services_trackclean_enabled: true
+media_services_trackclean_dir: "{{ media_services_stacks_dir }}/trackclean"
+
 media_services_ufw_default_incoming: "deny"
 media_services_ufw_default_outgoing: "allow"
 

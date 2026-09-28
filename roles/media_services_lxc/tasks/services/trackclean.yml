@@ -1,0 +1,18 @@
+---
+# Track cleanup (German/English, anime: Japanese audio) run by Sonarr/Radarr as
+# their "Import Using Script"; mounted read-only into the four *arr containers.
+
+- name: Create trackclean directory
+  ansible.builtin.file:
+    path: "{{ media_services_trackclean_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Deploy trackclean scripts
+  ansible.builtin.copy:
+    src: "trackclean/{{ item }}"
+    dest: "{{ media_services_trackclean_dir }}/{{ item }}"
+    mode: "0755"
+  loop:
+    - trackclean.py
+    - trackclean.sh
