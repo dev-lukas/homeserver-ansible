@@ -22,8 +22,12 @@
             - PUID={{ media_services_puid }}
             - PGID={{ media_services_pgid }}
             - TZ={{ media_services_timezone }}
+            - DOCKER_MODS=linuxserver/mods:universal-package-install
+            - INSTALL_PACKAGES=mkvtoolnix|python3
+            - TRACKCLEAN_PROFILE=anime
           volumes:
             - ./config:/config
+            - {{ media_services_trackclean_dir }}:/trackclean:ro
             - {{ media_services_nfs_mount }}/anime-movies:/movies
             - {{ media_services_nfs_mount }}/downloads:/downloads
     mode: "0644"

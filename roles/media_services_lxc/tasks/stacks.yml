@@ -6,6 +6,9 @@
 - name: Deploy Prowlarr
   ansible.builtin.include_tasks: services/prowlarr.yml
 
+- name: Deploy trackclean scripts
+  ansible.builtin.include_tasks: services/trackclean.yml
+
 - name: Deploy Sonarr
   ansible.builtin.include_tasks: services/sonarr.yml
 
@@ -17,6 +20,9 @@
 
 - name: Deploy Radarr Anime
   ansible.builtin.include_tasks: services/radarr-anime.yml
+
+- name: Configure the trackclean import script in the *arr instances
+  ansible.builtin.include_tasks: services/trackclean_import.yml
 
 - name: Deploy SABnzbd
   ansible.builtin.include_tasks: services/sabnzbd.yml

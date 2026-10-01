@@ -1,0 +1,47 @@
+---
+# Point the four *arr instances at the trackclean import script (or turn it off
+# again with media_services_trackclean_enabled: false).
+
+- name: Configure the trackclean import script
+  vars:
+    _trackclean_instances:
+      - { name: sonarr, port: "{{ media_services_sonarr_port }}", api_key: "{{ secret_sonarr_api_key }}" }
+      - { name: sonarr-anime, port: "{{ media_services_sonarr_anime_port }}", api_key: "{{ secret_sonarr_anime_api_key }}" }
+      - { name: radarr, port: "{{ media_services_radarr_port }}", api_key: "{{ secret_radarr_api_key }}" }
+      - { name: radarr-anime, port: "{{ media_services_radarr_anime_port }}", api_key: "{{ secret_radarr_anime_api_key }}" }
+    _trackclean_settings:
+      useScriptImport: "{{ media_services_trackclean_enabled | bool }}"
+      scriptImportPath: "/trackclean/trackclean.sh"
+  block:
+    # The *arr APIs come up only after the docker mod has installed its packages.
+    - name: Read *arr media management settings
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ item.port }}/api/v3/config/mediamanagement"
+        headers:
+          X-Api-Key: "{{ item.api_key }}"
+        return_content: true
+      register: trackclean_mm
+      until: trackclean_mm.status == 200
+      retries: 30
+      delay: 5
+      loop: "{{ _trackclean_instances }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+
+    - name: Enable the import script in each *arr
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ item.item.port }}/api/v3/config/mediamanagement/{{ item.json.id }}"
+        method: PUT
+        headers:
+          X-Api-Key: "{{ item.item.api_key }}"
+        body_format: json
+        body: "{{ item.json | combine(_trackclean_settings) }}"
+        status_code: [200, 202]
+      loop: "{{ trackclean_mm.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: item.json.useScriptImport != _trackclean_settings.useScriptImport
+            or item.json.scriptImportPath | default('') != _trackclean_settings.scriptImportPath
+      changed_when: true
+      no_log: true
