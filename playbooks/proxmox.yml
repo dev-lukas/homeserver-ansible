@@ -53,6 +53,12 @@
         - ecc
         - monitoring
 
+    - role: proxmox_root/memory_guard
+      tags:
+        - memory_guard
+        - zfs
+        - oom
+
     # LXC/VM roles
     - role: adguard_lxc
       tags:
