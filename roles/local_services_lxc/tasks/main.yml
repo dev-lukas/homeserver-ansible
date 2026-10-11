@@ -91,6 +91,32 @@
     line: "mp0: {{ apps_lxc_immich_source }},mp={{ apps_lxc_immich_mp }}"
     insertafter: EOF
 
+- name: Ensure Paperless ZFS dataset exists on host
+  community.general.zfs:
+    name: "{{ apps_lxc_paperless_dataset }}"
+    state: present
+
+- name: Ensure Paperless directories exist on host
+  ansible.builtin.file:
+    path: "{{ apps_lxc_paperless_source }}/{{ item }}"
+    state: directory
+    owner: "{{ apps_lxc_paperless_owner }}"
+    group: "{{ apps_lxc_paperless_owner }}"
+    mode: "0750"
+  loop:
+    - ""
+    - media
+    - consume
+    - export
+
+- name: Configure Paperless bind mount
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ apps_lxc_vmid }}.conf"
+    regexp: "^mp1:"
+    line: "mp1: {{ apps_lxc_paperless_source }},mp={{ apps_lxc_paperless_mp }}"
+    insertafter: EOF
+  register: apps_paperless_mp
+
 # --- Optional iGPU passthrough for Immich ML ---
 
 - name: Get render group GID from host
@@ -120,6 +146,22 @@
   ansible.builtin.pause:
     seconds: 10
   when: apps_start_result.changed
+
+# Mount points only attach at container start, so a running container needs a reboot.
+- name: Reboot container to attach new mount points
+  ansible.builtin.command:
+    cmd: "pct reboot {{ apps_lxc_vmid }}"
+  when:
+    - apps_paperless_mp is changed
+    - not apps_start_result.changed
+  changed_when: true
+
+- name: Wait for container to be ready after reboot
+  ansible.builtin.pause:
+    seconds: 10
+  when:
+    - apps_paperless_mp is changed
+    - not apps_start_result.changed
 
 # The host's root key must survive this push; the stats crons publish JSON with it.
 - name: Read Proxmox root public key (stats push)
@@ -204,6 +246,10 @@
     - name: Deploy local services stacks
       ansible.builtin.include_tasks: stacks.yml
       when: apps_lxc_deploy_local_services | default(true) | bool
+
+    - name: Deploy Samba scan share
+      ansible.builtin.include_tasks: samba.yml
+      when: apps_lxc_deploy_samba | default(true) | bool
 
   delegate_to: "{{ apps_lxc_hostname }}"
 

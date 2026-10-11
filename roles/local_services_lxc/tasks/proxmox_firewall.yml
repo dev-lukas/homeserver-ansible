@@ -35,6 +35,10 @@
       IN ACCEPT -p tcp -dport {{ local_services_mealie_port }} -log nolog
       # Homepage
       IN ACCEPT -p tcp -dport {{ local_services_homepage_port }} -log nolog
+      # Paperless
+      IN ACCEPT -p tcp -dport {{ local_services_paperless_port }} -log nolog
+      # Samba scan share (LAN only)
+      IN ACCEPT -p tcp -dport 445 -source {{ samba_allowed_subnet }} -log nolog
       # ICMP (ping)
       IN ACCEPT -p icmp -log nolog
       FWEOF

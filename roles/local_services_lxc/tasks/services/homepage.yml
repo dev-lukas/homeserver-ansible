@@ -262,6 +262,10 @@
               icon: mdi-silverware-fork-knife
               href: https://recipes.{{ reverse_proxy_domain }}
               description: Recipe manager
+          - Paperless:
+              icon: mdi-file-document-multiple
+              href: https://paperless.{{ reverse_proxy_domain }}
+              description: Document archive
 
       - Media Services:
           - Jellyfin:
