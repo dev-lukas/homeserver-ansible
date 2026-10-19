@@ -5,9 +5,6 @@ ssh_authorized_keys:
   - "{{ secret_ansible_deploy_public_key | default(omit) }}"
 timezone: "Europe/Berlin"
 
-# Proton Pass vault holding SSH Key items (agent + deploy public key lookup).
-secrets_ssh_vault: ssh-keys
-
 # Hardened apt upgrade for every Debian guest, piped into `bash -s`; the lock
 # timeout is what keeps runs from failing under a pile of updates.
 apt_maintenance_script: |

@@ -65,7 +65,7 @@ curl -fsSL https://proton.me/download/pass-cli/install.sh | bash   # installs ~/
 pass-cli login                                                     # web login, session persists
 ```
 
-Then run the agent as a service, scoped to the `ssh-keys` vault:
+Then run the agent as a service, scoped to the `Server` vault:
 
 ```ini
 # /etc/systemd/system/proton-pass-ssh-agent.service
@@ -74,7 +74,7 @@ Description=Proton Pass SSH agent
 After=network-online.target
 
 [Service]
-ExecStart=%h/.local/bin/pass-cli ssh-agent start --vault-name ssh-keys --socket-path %h/.ssh/proton-pass-agent.sock
+ExecStart=%h/.local/bin/pass-cli ssh-agent start --vault-name Server --socket-path %h/.ssh/proton-pass-agent.sock
 Restart=on-failure
 RestartSec=10
 
@@ -94,7 +94,11 @@ early if the session or the agent socket is missing.
 
 ### Layout in Proton Pass
 
-| Vault       | Item                       | Fields                                   |
+All items live in the `Server` vault, sorted into folders. pass-cli looks
+items up by exact (case-sensitive) title across the whole vault and cannot
+address folders, so the titles used below must stay unique within `Server`.
+
+| Folder      | Item                       | Fields                                   |
 |-------------|----------------------------|------------------------------------------|
 | `ssh-keys`  | `ansible-deploy` (SSH Key) | `private_key`, `public_key`              |
 | `homeserver`| `github-runner`            | `pat`                                    |
