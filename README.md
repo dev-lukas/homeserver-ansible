@@ -235,3 +235,7 @@ whether a reboot is required, and whether it was rebooted — plus an
     `ci_runner_autostart` watchdog
   - Dev VM 107 has a Home Assistant switch, backed by a Proxmox API token
     scoped to that one VM — see [docs/dev-vm-power.md](docs/dev-vm-power.md)
+
+## License
+
+[MIT](LICENSE)
