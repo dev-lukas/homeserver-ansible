@@ -44,5 +44,8 @@ else
       log "idle ${idle_min}m >= ${IDLE_MINUTES}m -> shutting down VM $VMID"
       qm shutdown "$VMID" --timeout 120 || true
     fi
+  else
+    # Forget the last job once the VM is off, else a fresh start inherits its idle time.
+    rm -f "$STATE_FILE"
   fi
 fi
