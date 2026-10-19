@@ -492,64 +492,107 @@
     ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
   tasks:
-    # The CI VM is on-demand (onboot 0); shut it down again if we started it.
-    - name: Check CI runner VM status
-      ansible.builtin.command:
-        cmd: "qm status {{ ci_runner_vmid }}"
-      register: ci_vm_status
-      changed_when: false
+    # The on-demand watchdog would shut the VM down mid-upgrade once it looks
+    # idle, so it is paused for this play and resumed in the always block.
+    - name: Check CI runner watchdog timer
+      ansible.builtin.systemd_service:
+        name: ci-runner-autostart.timer
+      register: ci_watchdog_timer
+      failed_when: false
 
-    - name: Start CI runner VM for maintenance
-      ansible.builtin.command:
-        cmd: "qm start {{ ci_runner_vmid }}"
-      when: "'running' not in ci_vm_status.stdout"
-      changed_when: true
+    - name: CI runner maintenance with the watchdog paused
+      block:
+        - name: Pause CI runner watchdog
+          ansible.builtin.systemd_service:
+            name: ci-runner-autostart.timer
+            state: stopped
+          when: ci_watchdog_timer.status.ActiveState | default('') == 'active'
 
-    - name: Wait for CI runner SSH
-      ansible.builtin.wait_for:
-        host: "{{ ci_runner_ip }}"
-        port: 22
-        timeout: 300
-      when: "'running' not in ci_vm_status.stdout"
+        # A tick already in flight may still be shutting the VM down.
+        - name: Wait for a running watchdog tick to finish
+          ansible.builtin.systemd_service:
+            name: ci-runner-autostart.service
+          register: ci_watchdog_service
+          until: ci_watchdog_service.status.ActiveState | default('inactive') not in ['active', 'activating', 'deactivating']
+          retries: 30
+          delay: 10
+          failed_when: false
+          when: ci_watchdog_timer.status.ActiveState | default('') == 'active'
 
-    - name: Run hardened apt maintenance
-      ansible.builtin.include_tasks: tasks/maintenance_apt.yml
-      vars:
-        maint_label: "CI Runner VM"
-        maint_ip: "{{ ci_runner_ip }}"
-        # Set to false if you want to avoid interrupting in-flight CI jobs.
-        maint_auto_reboot: true
+        # The CI VM is on-demand (onboot 0); shut it down again if we started it.
+        - name: Check CI runner VM status
+          ansible.builtin.command:
+            cmd: "qm status {{ ci_runner_vmid }}"
+          register: ci_vm_status
+          changed_when: false
 
-    # Legacy registry on the CI VM, gone post-cutover; skip when its stack dir is absent.
-    - name: Update legacy registry container (pre-cutover only)
-      ansible.builtin.shell:
-        cmd: >-
-          ssh {{ ssh_opts }} root@{{ ci_runner_ip }}
-          'if [ -d /opt/stacks/registry ]; then
-             cd /opt/stacks/registry && docker compose pull && docker compose up -d;
-           else echo LEGACY_REGISTRY_ABSENT; fi'
-      register: legacy_registry
-      changed_when: false
+        - name: Start CI runner VM for maintenance
+          ansible.builtin.command:
+            cmd: "qm start {{ ci_runner_vmid }}"
+          when: "'running' not in ci_vm_status.stdout"
+          changed_when: true
 
-    - name: Prune unused Docker images
-      ansible.builtin.shell:
-        cmd: "ssh {{ ssh_opts }} root@{{ ci_runner_ip }} docker image prune -f"
-      register: prune_result
-      changed_when: false
+        - name: Wait for CI runner SSH
+          ansible.builtin.wait_for:
+            host: "{{ ci_runner_ip }}"
+            port: 22
+            timeout: 300
+          when: "'running' not in ci_vm_status.stdout"
 
-    - name: Display update summary
-      ansible.builtin.debug:
-        msg: |
-          CI Runner VM updated.
-          Packages upgraded: {{ maint_apt.changed }}
-          Legacy registry: {{ 'absent (LXC 106 is authoritative)' if 'LEGACY_REGISTRY_ABSENT' in legacy_registry.stdout else 'updated' }}
-          Pruned: {{ prune_result.stdout_lines[-1] | default('Done') }}
+        - name: Run hardened apt maintenance
+          ansible.builtin.include_tasks: tasks/maintenance_apt.yml
+          vars:
+            maint_label: "CI Runner VM"
+            maint_ip: "{{ ci_runner_ip }}"
+            # Set to false if you want to avoid interrupting in-flight CI jobs.
+            maint_auto_reboot: true
 
-    - name: Shut CI runner VM back down (was only started for maintenance)
-      ansible.builtin.command:
-        cmd: "qm shutdown {{ ci_runner_vmid }} --timeout 120"
-      when: "'running' not in ci_vm_status.stdout"
-      changed_when: true
+        # Legacy registry on the CI VM, gone post-cutover; skip when its stack dir is absent.
+        - name: Update legacy registry container (pre-cutover only)
+          ansible.builtin.shell:
+            cmd: >-
+              ssh {{ ssh_opts }} root@{{ ci_runner_ip }}
+              'if [ -d /opt/stacks/registry ]; then
+                 cd /opt/stacks/registry && docker compose pull && docker compose up -d;
+               else echo LEGACY_REGISTRY_ABSENT; fi'
+          register: legacy_registry
+          changed_when: false
+
+        - name: Prune unused Docker images
+          ansible.builtin.shell:
+            cmd: "ssh {{ ssh_opts }} root@{{ ci_runner_ip }} docker image prune -f"
+          register: prune_result
+          changed_when: false
+
+        - name: Display update summary
+          ansible.builtin.debug:
+            msg: |
+              CI Runner VM updated.
+              Packages upgraded: {{ maint_apt.changed }}
+              Legacy registry: {{ 'absent (LXC 106 is authoritative)' if 'LEGACY_REGISTRY_ABSENT' in legacy_registry.stdout else 'updated' }}
+              Pruned: {{ prune_result.stdout_lines[-1] | default('Done') }}
+
+        - name: Check CI runner VM status before shutdown
+          ansible.builtin.command:
+            cmd: "qm status {{ ci_runner_vmid }}"
+          register: ci_vm_status_after
+          changed_when: false
+          when: "'running' not in ci_vm_status.stdout"
+
+        - name: Shut CI runner VM back down (was only started for maintenance)
+          ansible.builtin.command:
+            cmd: "qm shutdown {{ ci_runner_vmid }} --timeout 120"
+          when:
+            - "'running' not in ci_vm_status.stdout"
+            - "'running' in ci_vm_status_after.stdout"
+          changed_when: true
+
+      always:
+        - name: Resume CI runner watchdog
+          ansible.builtin.systemd_service:
+            name: ci-runner-autostart.timer
+            state: started
+          when: ci_watchdog_timer.status.ActiveState | default('') == 'active'
 
 
 - name: Maintenance - Summary
