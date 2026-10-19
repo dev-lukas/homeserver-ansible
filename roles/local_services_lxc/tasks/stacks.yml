@@ -8,6 +8,9 @@
 - name: Deploy Mealie
   ansible.builtin.include_tasks: services/mealie.yml
 
+- name: Deploy Paperless
+  ansible.builtin.include_tasks: services/paperless.yml
+
 - name: Deploy Homepage
   ansible.builtin.include_tasks: services/homepage.yml
 

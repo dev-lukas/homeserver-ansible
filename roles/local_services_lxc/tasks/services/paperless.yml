@@ -1,0 +1,121 @@
+---
+# Paperless-ngx; documents live on the bind-mounted ZFS dataset, DB + index on the rootfs.
+
+- name: Validate Paperless secrets are configured
+  ansible.builtin.assert:
+    that:
+      - secret_paperless_secret_key is defined
+      - secret_paperless_secret_key | length > 0
+      - secret_paperless_db_password is defined
+      - secret_paperless_db_password | length > 0
+      - secret_paperless_admin_password is defined
+      - secret_paperless_admin_password | length > 0
+    fail_msg: "secret_paperless_* must be set (Proton Pass item 'paperless')."
+  no_log: true
+
+- name: Ensure Paperless mount is active before deploying
+  ansible.builtin.command:
+    cmd: "mountpoint -q {{ apps_lxc_paperless_mp }}"
+  changed_when: false
+
+- name: Create Paperless stack directories
+  ansible.builtin.file:
+    path: "{{ local_services_stacks_dir }}/paperless/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - ""
+    - data
+    - pgdata
+
+# The admin is only created on first start; later password changes happen in the UI.
+- name: Deploy Paperless environment file
+  ansible.builtin.copy:
+    dest: "{{ local_services_stacks_dir }}/paperless/.env"
+    mode: "0600"
+    content: |
+      PAPERLESS_URL={{ local_services_paperless_base_url }}
+      PAPERLESS_SECRET_KEY={{ secret_paperless_secret_key }}
+      PAPERLESS_DBPASS={{ secret_paperless_db_password }}
+      POSTGRES_PASSWORD={{ secret_paperless_db_password }}
+      PAPERLESS_ADMIN_USER={{ paperless_admin_user }}
+      PAPERLESS_ADMIN_PASSWORD={{ secret_paperless_admin_password }}
+  no_log: true
+
+- name: Deploy Paperless docker-compose.yml
+  ansible.builtin.copy:
+    dest: "{{ local_services_stacks_dir }}/paperless/docker-compose.yml"
+    mode: "0644"
+    content: |
+      name: paperless
+
+      services:
+        broker:
+          image: docker.io/library/redis:8
+          container_name: paperless_broker
+          restart: unless-stopped
+          volumes:
+            - redisdata:/data
+
+        db:
+          image: docker.io/library/postgres:17
+          container_name: paperless_db
+          restart: unless-stopped
+          volumes:
+            - ./pgdata:/var/lib/postgresql/data
+          environment:
+            POSTGRES_DB: paperless
+            POSTGRES_USER: paperless
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+        webserver:
+          image: ghcr.io/paperless-ngx/paperless-ngx:latest
+          container_name: paperless
+          restart: unless-stopped
+          depends_on:
+            - db
+            - broker
+          ports:
+            - "{{ local_services_paperless_port }}:8000"
+          volumes:
+            - ./data:/usr/src/paperless/data
+            - {{ apps_lxc_paperless_mp }}/media:/usr/src/paperless/media
+            - {{ apps_lxc_paperless_mp }}/export:/usr/src/paperless/export
+            - {{ apps_lxc_paperless_mp }}/consume:/usr/src/paperless/consume
+          env_file:
+            - .env
+          environment:
+            PAPERLESS_REDIS: redis://broker:6379
+            PAPERLESS_DBHOST: db
+            USERMAP_UID: "{{ apps_lxc_paperless_owner }}"
+            USERMAP_GID: "{{ apps_lxc_paperless_owner }}"
+            PAPERLESS_TIME_ZONE: Europe/Berlin
+            PAPERLESS_OCR_LANGUAGE: {{ paperless_ocr_language }}
+            # Readable layout on disk, so the archive is usable without Paperless.
+            PAPERLESS_FILENAME_FORMAT: "{% raw %}{{ created_year }}/{{ correspondent }}/{{ title }}{% endraw %}"
+            # Scanner drops can repeat; don't let duplicates pile up in the share.
+            PAPERLESS_CONSUMER_DELETE_DUPLICATES: "true"
+            PAPERLESS_TASK_WORKERS: 1
+            PAPERLESS_THREADS_PER_WORKER: 2
+
+      volumes:
+        redisdata:
+
+- name: Start Paperless stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ local_services_stacks_dir }}/paperless"
+  register: paperless_start
+  changed_when: "'Started' in paperless_start.stderr or 'Created' in paperless_start.stderr"
+
+# Full export incl. DB metadata; this is what the backup server should pick up.
+- name: Schedule weekly Paperless document export
+  ansible.builtin.cron:
+    name: paperless document export
+    weekday: "0"
+    hour: "3"
+    minute: "30"
+    job: >-
+      cd {{ local_services_stacks_dir }}/paperless &&
+      docker compose exec -T webserver document_exporter ../export --delete --no-progress-bar
+      > /var/log/paperless-export.log 2>&1

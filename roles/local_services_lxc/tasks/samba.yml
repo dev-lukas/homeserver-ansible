@@ -1,0 +1,92 @@
+---
+# Scan-to-SMB drop share into the Paperless consume folder, LAN only.
+# No handlers: this file runs delegated, a notified handler would run on the host.
+
+- name: Validate Samba scan password is configured
+  ansible.builtin.assert:
+    that:
+      - secret_paperless_smb_password is defined
+      - secret_paperless_smb_password | length > 0
+    fail_msg: "secret_paperless_smb_password must be set (Proton Pass item 'paperless')."
+  no_log: true
+
+- name: Install Samba
+  ansible.builtin.apt:
+    name: samba
+    state: present
+
+# Owns the consume folder (uid 1000 = Paperless USERMAP_UID); Samba forces writes to it.
+- name: Create paperless group
+  ansible.builtin.group:
+    name: paperless
+    gid: "{{ apps_lxc_paperless_owner }}"
+
+- name: Create paperless user
+  ansible.builtin.user:
+    name: paperless
+    uid: "{{ apps_lxc_paperless_owner }}"
+    group: paperless
+    shell: /usr/sbin/nologin
+    create_home: false
+    system: true
+
+- name: Create scan login user
+  ansible.builtin.user:
+    name: "{{ samba_scan_user }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+    system: true
+
+- name: Deploy smb.conf
+  ansible.builtin.copy:
+    dest: /etc/samba/smb.conf
+    mode: "0644"
+    validate: testparm -s %s
+    content: |
+      [global]
+        workgroup = WORKGROUP
+        server role = standalone server
+        server min protocol = SMB2_02
+        smb ports = 445
+        disable netbios = yes
+        hosts allow = {{ samba_allowed_subnet }} 127.0.0.1
+        hosts deny = 0.0.0.0/0
+        map to guest = never
+        load printers = no
+        printing = bsd
+        printcap name = /dev/null
+        disable spoolss = yes
+        logging = file
+        log file = /var/log/samba/log.%m
+        max log size = 1000
+
+      [{{ samba_scan_share }}]
+        path = {{ apps_lxc_paperless_mp }}/consume
+        valid users = {{ samba_scan_user }}
+        writable = yes
+        browseable = yes
+        force user = paperless
+        force group = paperless
+        create mask = 0640
+        directory mask = 0750
+  register: samba_conf
+
+# Re-applied every run so the share follows the Proton Pass value.
+- name: Set Samba password for scan user
+  ansible.builtin.command:
+    cmd: "smbpasswd -s -a {{ samba_scan_user }}"
+    stdin: "{{ secret_paperless_smb_password }}\n{{ secret_paperless_smb_password }}"
+  changed_when: false
+  no_log: true
+
+- name: Enable and start smbd
+  ansible.builtin.systemd:
+    name: smbd
+    enabled: true
+    state: started
+
+- name: Restart smbd if config changed
+  ansible.builtin.systemd:
+    name: smbd
+    state: restarted
+  when: samba_conf is changed

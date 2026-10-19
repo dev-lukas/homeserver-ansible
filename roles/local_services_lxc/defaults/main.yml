@@ -32,11 +32,18 @@ apps_lxc_immich_mp: "/mnt/immich"
 # Container root maps to host 100000 under the idmap, so the bind target must match.
 apps_lxc_library_owner: 100000
 
+# Paperless documents: own ZFS dataset, owned by uid 1000 (mapped 1:1 into the container).
+apps_lxc_paperless_dataset: "mediapool/paperless"
+apps_lxc_paperless_source: "/mediapool/paperless"
+apps_lxc_paperless_mp: "/mnt/paperless"
+apps_lxc_paperless_owner: 1000
+
 # Intel iGPU passthrough for Immich ML; shares the same /dev/dri as jellyfin.
 apps_lxc_igpu_passthrough: false
 
 apps_lxc_deploy_immich: true
 apps_lxc_deploy_local_services: true
+apps_lxc_deploy_samba: true
 
 # One-shot cutover only: restores Immich's own backup into the fresh Postgres
 # before the server starts. Self-skips if the DB already holds data.
@@ -59,6 +66,16 @@ local_services_vert_port: 3000
 local_services_mealie_port: 9925
 local_services_homepage_port: 3001
 local_services_mealie_base_url: "https://recipes.lukas-roth.dev"
+local_services_paperless_port: 8000
+local_services_paperless_base_url: "https://paperless.lukas-roth.dev"
+
+paperless_ocr_language: "deu+eng"
+paperless_admin_user: "admin"
+
+# Scan-to-SMB drop share for the Paperless consume folder (LAN only).
+samba_scan_share: "scans"
+samba_scan_user: "scanner"
+samba_allowed_subnet: "192.168.178.0/24"
 
 homepage_proxmox_ip: "192.168.178.56"
 homepage_storage_mounts:

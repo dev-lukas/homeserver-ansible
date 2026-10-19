@@ -336,6 +336,7 @@
       - bentopdf
       - vert
       - mealie
+      - paperless
       - homepage
 
   tasks:

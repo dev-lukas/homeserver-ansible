@@ -64,6 +64,13 @@ reverse_proxy_backends:
     backend_port: 9925
     websocket: false
     internal_only: true
+  - name: "paperless"
+    subdomain: "paperless"
+    backend_host: "192.168.178.15"
+    backend_port: 8000
+    websocket: true  # Live task/upload status
+    internal_only: true
+    client_max_body_size: "200M"
   - name: "homepage"
     subdomain: "home"
     backend_host: "192.168.178.15"
