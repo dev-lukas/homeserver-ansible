@@ -50,7 +50,7 @@ jobs:
         with:
           token: ${{ secrets.RENOVATE_TOKEN }}
           configurationFile: .github/renovate-global.js
-          renovate-version: 43.251.0
+          renovate-version: 44.181.0
         env:
           RENOVATE_PUBLIC_REPOS: ${{ steps.public_repos.outputs.list }}
           RENOVATE_DRY_RUN: ${{ inputs.dryRun == true && 'full' || '' }}
