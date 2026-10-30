@@ -41,10 +41,32 @@
         autoclean: true
         lock_timeout: 600
 
+    # Proxmox never writes /var/run/reboot-required, so compare the running
+    # kernel with the one the next boot picks (pinned, else newest installed).
     - name: Check if reboot is required
-      ansible.builtin.stat:
-        path: /var/run/reboot-required
-      register: reboot_required
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -o pipefail
+          running=$(uname -r)
+          pin=$(cat /etc/kernel/next-boot-pin /etc/kernel/proxmox-boot-pin 2>/dev/null | head -n1)
+          target=${pin:-$(ls /boot/vmlinuz-* | sed 's|.*/vmlinuz-||' | sort -V | tail -n1)}
+          echo "$running"
+          echo "$target"
+          if [ "$running" = "$target" ] && [ ! -f /var/run/reboot-required ]; then
+            echo NO_REBOOT
+          else
+            echo REBOOT_REQUIRED
+          fi
+      register: reboot_check
+      changed_when: false
+      check_mode: false
+
+    - name: Set Proxmox reboot facts
+      ansible.builtin.set_fact:
+        proxmox_running_kernel: "{{ reboot_check.stdout_lines[0] }}"
+        proxmox_target_kernel: "{{ reboot_check.stdout_lines[1] }}"
+        proxmox_reboot_required: "{{ reboot_check.stdout_lines[2] == 'REBOOT_REQUIRED' }}"
 
     - name: Record Proxmox maintenance result (reboot is report-only)
       ansible.builtin.set_fact:
@@ -53,7 +75,7 @@
         _entry:
           host: "Proxmox host"
           upgraded: "{{ apt_upgrade.changed }}"
-          reboot_required: "{{ reboot_required.stat.exists | default(false) }}"
+          reboot_required: "{{ proxmox_reboot_required }}"
           rebooted: false
 
     - name: Check if Glances venv exists
@@ -104,7 +126,7 @@
         msg: |
           Proxmox host updated.
           Packages upgraded: {{ apt_upgrade.changed }}
-          Reboot required: {{ reboot_required.stat.exists | default(false) }}
+          Reboot required: {{ proxmox_reboot_required }} (running {{ proxmox_running_kernel }}, next boot {{ proxmox_target_kernel }})
           Glances status: {{ glances_maintenance_status | default('not-checked') }}
 
 - name: Maintenance - AdGuard LXC
