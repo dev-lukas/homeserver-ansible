@@ -214,6 +214,10 @@ When an update sets `/var/run/reboot-required`, the playbook:
   then waits for them to finish booting before continuing.
 - **Reports only** (never reboots) the Proxmox host and the Development VM.
 
+Proxmox never writes `/var/run/reboot-required`, so for the host the playbook
+also compares the running kernel with the one the next boot will use (the
+pinned kernel if set, otherwise the newest in `/boot`).
+
 Toggle per host with `maint_auto_reboot` in the relevant play. The final
 "Maintenance summary" play prints, per host, whether packages were upgraded,
 whether a reboot is required, and whether it was rebooted — plus an
