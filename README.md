@@ -53,8 +53,8 @@ Ansible configuration for managing Proxmox homeserver infrastructure.
 Nothing secret is stored in this repository. Every credential is fetched at
 run time from Proton Pass through [pass-cli](https://protonpass.github.io/pass-cli/)
 and the `proton_pass` lookup (see `inventory/group_vars/proxmox/secrets.yml`
-for the full list). The lookup is vendored in `plugins/lookup/` from
-community.general main until a release ships the pass-cli 2.3 fix. SSH keys are
+for the full list). It needs community.general 14.0.0 or later, the first
+release that works with pass-cli 2.3+ and reads custom item fields. SSH keys are
 served by the Proton Pass SSH agent, so no private key touches the disk of
 the controller or of Proxmox.
 

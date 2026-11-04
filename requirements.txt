@@ -1,6 +1,6 @@
 # Ansible core and dependencies
 ansible>=8.0.0
-ansible-core>=2.15.0
+ansible-core>=2.19.0
 
 # Required for various modules
 jmespath>=1.0.0
