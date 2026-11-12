@@ -102,6 +102,7 @@ address folders, so the titles used below must stay unique within `Server`.
 |-------------|----------------------------|------------------------------------------|
 | `ssh-keys`  | `ansible-deploy` (SSH Key) | `private_key`, `public_key`              |
 | `homeserver`| `github-runner`            | `pat`                                    |
+| `homeserver`| `ghcr-pull`                | `token` (classic PAT, `read:packages`)   |
 | `homeserver`| `hetzner-dns`              | `api_token`                              |
 | `homeserver`| `maxmind`                  | `account_id`, `license_key`              |
 | `homeserver`| `crowdsec`                 | `enroll_key`                             |

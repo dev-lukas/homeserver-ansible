@@ -72,6 +72,14 @@
   changed_when: false
   failed_when: "'fuse-overlayfs' not in docker_driver.stdout"
 
+# Every stack here pulls from ghcr.io; anonymous pulls get throttled.
+- name: Log Docker in to GHCR (read-only pull token)
+  ansible.builtin.command:
+    cmd: "docker login ghcr.io -u {{ ghcr_username }} --password-stdin"
+    stdin: "{{ secret_ghcr_pull_token }}"
+  changed_when: false
+  no_log: true
+
 - name: Create stacks directory
   ansible.builtin.file:
     path: "{{ immich_stacks_dir | default('/opt/stacks') }}"

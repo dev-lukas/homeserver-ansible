@@ -5,6 +5,9 @@ ssh_authorized_keys:
   - "{{ secret_ansible_deploy_public_key | default(omit) }}"
 timezone: "Europe/Berlin"
 
+# Owner of the ghcr-pull token; GHCR checks the token, the name is not secret.
+ghcr_username: "dev-lukas"
+
 # Hardened apt upgrade for every Debian guest, piped into `bash -s`; the lock
 # timeout is what keeps runs from failing under a pile of updates.
 apt_maintenance_script: |

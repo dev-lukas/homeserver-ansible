@@ -369,11 +369,23 @@
         maint_ip: "{{ apps_ip }}"
         maint_auto_reboot: true
 
+    # Re-login each run so a rotated token takes effect without a redeploy.
+    - name: Log Docker in to GHCR (read-only pull token)
+      ansible.builtin.command:
+        cmd: "ssh {{ ssh_opts }} root@{{ apps_ip }} 'docker login ghcr.io -u {{ ghcr_username }} --password-stdin'"
+        stdin: "{{ secret_ghcr_pull_token }}"
+      changed_when: false
+      no_log: true
+
+    # GHCR throttles in short bursts; one failed pull must not abort the run.
     - name: Pull and recreate Docker stacks
       ansible.builtin.shell:
         cmd: "ssh {{ ssh_opts }} root@{{ apps_ip }} 'cd {{ stacks_dir }}/{{ item }} && docker compose pull && docker compose up -d'"
       loop: "{{ apps_stacks }}"
       register: stack_updates
+      retries: 3
+      delay: 30
+      until: stack_updates.rc == 0
       changed_when: false
 
     # Immich runs DB migrations on version jumps, so allow a long wait.
@@ -433,6 +445,10 @@
       ansible.builtin.shell:
         cmd: "ssh {{ ssh_opts }} root@{{ media_services_ip }} 'cd {{ stacks_dir }}/{{ item }} && docker compose pull'"
       loop: "{{ ['gluetun'] + media_services_gluetun_stacks + media_services_standalone_stacks }}"
+      register: media_pulls
+      retries: 3
+      delay: 30
+      until: media_pulls.rc == 0
       changed_when: false
 
     - name: Update standalone stacks
