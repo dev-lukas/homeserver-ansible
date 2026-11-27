@@ -102,6 +102,7 @@
 
           # Logging
           access_log /var/log/nginx/{{ item.name }}.access.log json_combined;
+          access_log /var/log/nginx/{{ item.name }}.crowdsec.log crowdsec;
           error_log /var/log/nginx/{{ item.name }}.error.log warn;
 
           {{ 'client_max_body_size ' + item.client_max_body_size + ';' if item.client_max_body_size is defined else '' }}

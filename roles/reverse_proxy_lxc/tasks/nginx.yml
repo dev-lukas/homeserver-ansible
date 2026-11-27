@@ -137,7 +137,13 @@
           '"'"'"request_time":\$request_time,"http_referrer":"\$http_referer",'"'"'
           '"'"'"http_user_agent":"\$http_user_agent","country":"\$geoip2_data_country_code"}'"'"';
 
+          # CrowdSec nginx-logs only parses combined format, so it reads a
+          # parallel *.crowdsec.log copy; the JSON logs stay for humans.
+          log_format crowdsec '"'"'\$remote_addr - \$remote_user [\$time_local] "\$request" '"'"'
+                          '"'"'\$status \$body_bytes_sent "\$http_referer" "\$http_user_agent"'"'"';
+
           access_log /var/log/nginx/access.log json_combined;
+          access_log /var/log/nginx/access.crowdsec.log crowdsec;
 
           # Performance settings
           sendfile on;
