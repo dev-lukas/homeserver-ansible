@@ -42,6 +42,7 @@ server {
 
     # Logging
     access_log /var/log/nginx/{{ item.name }}.access.log json_combined;
+    access_log /var/log/nginx/{{ item.name }}.crowdsec.log crowdsec;
     error_log /var/log/nginx/{{ item.name }}.error.log warn;
 
 {% if item.websocket | default(false) %}

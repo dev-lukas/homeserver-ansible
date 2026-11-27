@@ -28,3 +28,4 @@ jellyfin_unprivileged: true
 jellyfin_nesting: true
 
 jellyfin_ssh_port: 22
+jellyfin_internal_subnet: "192.168.178.0/24"

@@ -23,8 +23,8 @@
       policy_out: ACCEPT
 
       [RULES]
-      # SSH access
-      IN ACCEPT -p tcp -dport {{ jellyfin_ssh_port }} -log nolog
+      # SSH access (LAN only)
+      IN ACCEPT -p tcp -dport {{ jellyfin_ssh_port }} -source {{ jellyfin_internal_subnet }} -log nolog
 
       # Jellyfin Web UI
       IN ACCEPT -p tcp -dport {{ jellyfin_web_port }} -log nolog
